@@ -7,6 +7,14 @@ from typing import Optional, TYPE_CHECKING, TypeVar, Type
 from langfuse import get_client
 from src.utils.app_logger import get_logger
 from pydantic import BaseModel
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential_jitter,
+    retry_if_exception_type,
+    before_sleep_log,
+)
+from openai import APIError, APIConnectionError, RateLimitError, APITimeoutError
 
 logger = get_logger(__name__)
 
@@ -14,6 +22,25 @@ if TYPE_CHECKING:
     from src.utils.prompt_loader import PromptMetadata
 
 T = TypeVar("T", bound=BaseModel)
+
+
+def _get_retry_decorator():
+    """Create a retry decorator with configurable max attempts from environment."""
+    max_retries = int(os.getenv("MAX_LLM_RETRIES", "3"))
+
+    return retry(
+        stop=stop_after_attempt(max_retries),
+        wait=wait_exponential_jitter(initial=1, max=60),
+        retry=(
+            retry_if_exception_type(APIConnectionError) |
+            retry_if_exception_type(RateLimitError) |
+            retry_if_exception_type(APITimeoutError) |
+            retry_if_exception_type(json.JSONDecodeError) |
+            retry_if_exception_type(APIError)
+        ),
+        before_sleep=before_sleep_log(logger, logger.level, exc_info=True),
+        reraise=True,
+    )
 
 
 class BaseLLMClient(ABC):
@@ -109,7 +136,38 @@ class OpenRouterClient(BaseLLMClient):
             api_key=self.api_key,
             base_url="https://openrouter.ai/api/v1",
         )
+
+        # Create retry decorator with configured max retries
+        self._retry = _get_retry_decorator()
+
         logger.info(f"OpenRouterClient initialized with model: {self.model}")
+
+    def _create_chat_completion(self, messages, temperature, max_tokens, response_format=None):
+        """Internal method to create chat completion with retry logic."""
+        kwargs = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if response_format:
+            kwargs["response_format"] = response_format
+
+        return self._retry(lambda: self.client.chat.completions.create(**kwargs))()
+
+    def _parse_chat_completion(self, messages, temperature, max_tokens, response_format):
+        """Internal method to parse chat completion with retry logic."""
+        return self._retry(lambda: self.client.beta.chat.completions.parse(
+            model=self.model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            response_format=response_format,
+        ))()
+
+    def _parse_json_with_retry(self, content: str) -> dict:
+        """Parse JSON with retry logic."""
+        return self._retry(lambda: json.loads(content))()
 
     def generate(
         self,
@@ -141,12 +199,13 @@ class OpenRouterClient(BaseLLMClient):
                 name="llm-generation",
                 prompt=prompt
             ) as generation:
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ]
+
+                response = self._create_chat_completion(
+                    messages=messages,
                     temperature=temperature,
                     max_tokens=max_tokens,
                 )
@@ -193,19 +252,20 @@ class OpenRouterClient(BaseLLMClient):
                 name="llm-generation",
                 prompt=prompt
             ) as generation:
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ]
+
+                response = self._create_chat_completion(
+                    messages=messages,
                     temperature=temperature,
                     max_tokens=max_tokens,
                     response_format={"type": "json_object"},
                 )
 
                 content = response.choices[0].message.content or "{}"
-                result = json.loads(content)
+                result = self._parse_json_with_retry(content)
 
                 logger.debug(f"OpenRouter JSON response received with {len(result)} keys")
 
@@ -258,12 +318,13 @@ class OpenRouterClient(BaseLLMClient):
                 name="llm-generation",
                 prompt=prompt
             ) as generation:
-                response = self.client.beta.chat.completions.parse(
-                    model=self.model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ]
+
+                response = self._parse_chat_completion(
+                    messages=messages,
                     temperature=temperature,
                     max_tokens=max_tokens,
                     response_format=response_format,
