@@ -264,19 +264,24 @@ class InterviewOrchestrator:
             langfuse = get_client()
             langfuse.update_current_span(
                 output={
-                    "verdict": feedback.verdict,
-                    "grade": feedback.grade.value
-                    if hasattr(feedback.grade, "value")
-                    else str(feedback.grade),
+                    "assessed_grade": feedback.assessed_grade.value
+                    if hasattr(feedback.assessed_grade, "value")
+                    else str(feedback.assessed_grade),
+                    "confidence_score": feedback.confidence_score,
                     "total_turns": self.turn_count,
-                    "hiring_recommendation": feedback.hiring_recommendation,
+                    "hiring_recommendation": feedback.hiring_recommendation.value
+                    if hasattr(feedback.hiring_recommendation, "value")
+                    else str(feedback.hiring_recommendation),
                 },
                 metadata={
-                    "confirmed_skills": feedback.confirmed_skills,
-                    "skill_gaps": feedback.skill_gaps,
-                    "topics_covered": feedback.topics_covered
-                    if hasattr(feedback, "topics_covered")
-                    else [],
+                    "confirmed_skills": [
+                        {"topic": s.topic, "status": s.status, "details": s.details}
+                        for s in feedback.confirmed_skills
+                    ],
+                    "knowledge_gaps": [
+                        {"topic": s.topic, "status": s.status, "details": s.details}
+                        for s in feedback.knowledge_gaps
+                    ],
                 },
             )
 
