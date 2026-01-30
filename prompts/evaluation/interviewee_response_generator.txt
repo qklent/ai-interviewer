@@ -39,6 +39,8 @@ Your task is to generate a realistic response that the candidate would give base
 **Response Format:**
 Return ONLY the candidate's response as plain text (not JSON). This is what they would say out loud.
 
+**IMPORTANT: Answer in Russian.** The candidate's response must be in Russian language.
+
 **Examples:**
 
 Profile: behavior_type="overconfident", strong_areas=["Python"]

@@ -423,7 +423,9 @@ This could be:
 - Adjusting difficulty based on performance
 - Moving to a new topic
 
-Avoid topics that have already been thoroughly covered."""
+Avoid topics that have already been thoroughly covered.
+
+IMPORTANT: Answer in Russian. Your response must be in Russian language."""
 
     user_prompt = f"""Candidate profile:
 {json.dumps(profile, indent=2)}
@@ -458,7 +460,7 @@ def generate_full_session(llm_client, turns: int = 8) -> Dict:
 
     # Initial greeting
     print("  Generating initial greeting...")
-    greeting = f"Hello! I'm your interviewer today. I see you're applying for the {profile.get('position', 'position')} role at {profile.get('grade', 'grade')} level. Let me start with a question: Can you tell me about your experience with {profile.get('position', 'this role')}?"
+    greeting = f"Здравствуйте! Я ваш интервьюер сегодня. Я вижу, что вы претендуете на должность {profile.get('position', 'position')} уровня {profile.get('grade', 'grade')}. Давайте начнем с вопроса: Расскажите, пожалуйста, о вашем опыте работы в области {profile.get('position', 'этой роли')}?"
 
     conversation_history.append({"role": "interviewer", "content": greeting})
 
