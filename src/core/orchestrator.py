@@ -1,6 +1,8 @@
 """Interview Orchestrator - coordinates agents and manages interview flow."""
 
 import re
+import uuid
+from datetime import datetime
 from typing import Optional
 
 from langfuse import observe, get_client
@@ -64,6 +66,7 @@ class InterviewOrchestrator:
             self.current_question = ""
             self.turn_count = 0
             self.is_first_response = True
+            self.session_id: Optional[str] = None  # Langfuse session ID for grouping traces
 
         except Exception as e:
             logger.exception(f"Failed to initialize orchestrator: {e}")
@@ -91,18 +94,32 @@ class InterviewOrchestrator:
         logger.info(f"Starting interview for {name} - Position: {position}, Grade: {grade}")
 
         try:
+            # Generate unique session ID for this interview
+            # Format: interview_{timestamp}_{uuid}
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.session_id = f"interview_{timestamp}_{uuid.uuid4().hex[:8]}"
+            logger.info(f"Created session ID: {self.session_id}")
+
             # Track session metadata in Langfuse
             if is_tracing_enabled():
                 try:
                     langfuse = get_client()
-                    # Update trace-level attributes
+                    # Update trace-level attributes with session_id
                     langfuse.update_current_trace(
+                        session_id=self.session_id,  # Group all traces by session
                         user_id=name,
                         tags=["interview", grade, position],
+                        metadata={
+                            "candidate_name": name,
+                            "position": position,
+                            "target_grade": grade,
+                            "experience": experience,
+                            "interview_start": datetime.now().isoformat(),
+                        },
                     )
                     # Update span-level attributes
                     langfuse.update_current_span(
-                        name=f"Interview: {name}",
+                        name=f"Interview Start: {name}",
                         metadata={
                             "position": position,
                             "target_grade": grade,
@@ -110,6 +127,7 @@ class InterviewOrchestrator:
                             "mode": "interactive",
                         },
                     )
+                    logger.info(f"Langfuse session created: {self.session_id}")
                 except Exception as e:
                     logger.warning(f"Could not update Langfuse trace/span: {e}")
                     print(f"⚠️  Could not update Langfuse trace/span: {e}")
@@ -179,6 +197,17 @@ class InterviewOrchestrator:
             if not self.is_active or not self.candidate_info:
                 logger.warning("Attempted to process response without active interview")
                 return "Interview not started. Please start an interview first.", False
+
+            # Tag this trace with the session_id
+            if is_tracing_enabled() and self.session_id:
+                try:
+                    langfuse = get_client()
+                    langfuse.update_current_trace(
+                        session_id=self.session_id,
+                        metadata={"turn": self.turn_count + 1},
+                    )
+                except Exception as e:
+                    logger.debug(f"Could not update trace session_id: {e}")
 
             # Check for stop command
             stop_patterns = [
@@ -323,7 +352,17 @@ class InterviewOrchestrator:
             if is_tracing_enabled() and feedback:
                 try:
                     langfuse = get_client()
+                    # Tag with session_id and add final outcome
+                    langfuse.update_current_trace(
+                        session_id=self.session_id,
+                        metadata={
+                            "interview_end": datetime.now().isoformat(),
+                            "total_turns": self.turn_count,
+                            "outcome": "completed",
+                        },
+                    )
                     langfuse.update_current_span(
+                        name=f"Interview End: {self.candidate_info.name}",
                         output={
                             "assessed_grade": feedback.assessed_grade.value
                             if hasattr(feedback.assessed_grade, "value")
@@ -345,6 +384,7 @@ class InterviewOrchestrator:
                             ],
                         },
                     )
+                    logger.info(f"Langfuse session finalized: {self.session_id}")
                 except Exception as e:
                     logger.warning(f"Could not update Langfuse span: {e}")
                     print(f"⚠️  Could not update Langfuse span: {e}")
@@ -352,6 +392,15 @@ class InterviewOrchestrator:
             # Save the log
             log_path = self.logger.save()
             logger.info(f"Interview log saved to: {log_path}")
+
+            # Flush Langfuse to ensure all traces are sent
+            if is_tracing_enabled():
+                try:
+                    langfuse = get_client()
+                    langfuse.flush()
+                    logger.debug("Langfuse traces flushed successfully")
+                except Exception as e:
+                    logger.debug(f"Could not flush Langfuse: {e}")
 
             self.is_active = False
             logger.info("Interview ended successfully")
