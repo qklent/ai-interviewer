@@ -464,71 +464,87 @@ def evaluate_interviewer_agent(
     """
     Run InterviewerAgent with specified prompt version and return response.
     """
-    llm_client = get_llm_client()
+    try:
+        print("    → Getting LLM client...")
+        llm_client = get_llm_client()
 
-    # Create candidate info from item
-    candidate_info = CandidateInfo(
-        name="Test Candidate",
-        position=item["input"]["position"],
-        target_grade=item["input"]["grade"],
-        experience="N/A",
-    )
+        print("    → Creating candidate info...")
+        # Create candidate info from item
+        candidate_info = CandidateInfo(
+            name="Test Candidate",
+            position=item["input"]["position"],
+            target_grade=item["input"]["grade"],
+            experience="N/A",
+        )
 
-    interviewer = InterviewerAgent(llm_client)
+        print("    → Creating InterviewerAgent...")
+        interviewer = InterviewerAgent(llm_client)
 
-    # Override system prompt
-    system_prompt = get_prompt_content(
-        langfuse, "interviewer", "system", prompt_version
-    )
-    interviewer.system_prompt = system_prompt
+        print("    → Loading system prompt...")
+        # Override system prompt
+        system_prompt = get_prompt_content(
+            langfuse, "interviewer", "system", prompt_version
+        )
+        interviewer.system_prompt = system_prompt
 
-    # Extract input
-    raw_conversation_history = item["input"]["conversation_history"]
-    observer_analysis_data = item["input"]["observer_analysis"]
+        print("    → Extracting conversation history...")
+        # Extract input
+        raw_conversation_history = item["input"]["conversation_history"]
+        observer_analysis_data = item["input"]["observer_analysis"]
 
-    # Transform conversation history from dataset format (role/content) to agent format (agent_message/user_message)
-    conversation_history = transform_conversation_history(raw_conversation_history)
+        # Transform conversation history from dataset format (role/content) to agent format (agent_message/user_message)
+        conversation_history = transform_conversation_history(raw_conversation_history)
 
-    # Extract current question and candidate response from raw conversation history
-    current_question = ""
-    candidate_response = ""
-    if len(raw_conversation_history) >= 2:
-        # Find the last interviewer question and candidate response pair
-        for i in range(len(raw_conversation_history) - 1, -1, -1):
-            if raw_conversation_history[i]["role"] == "interviewee":
-                candidate_response = raw_conversation_history[i]["content"]
-                # Find the previous interviewer question
-                for j in range(i - 1, -1, -1):
-                    if raw_conversation_history[j]["role"] == "interviewer":
-                        current_question = raw_conversation_history[j]["content"]
-                        break
-                break
+        print("    → Extracting current question and response...")
+        # Extract current question and candidate response from raw conversation history
+        current_question = ""
+        candidate_response = ""
+        if len(raw_conversation_history) >= 2:
+            # Find the last interviewer question and candidate response pair
+            for i in range(len(raw_conversation_history) - 1, -1, -1):
+                if raw_conversation_history[i]["role"] == "interviewee":
+                    candidate_response = raw_conversation_history[i]["content"]
+                    # Find the previous interviewer question
+                    for j in range(i - 1, -1, -1):
+                        if raw_conversation_history[j]["role"] == "interviewer":
+                            current_question = raw_conversation_history[j]["content"]
+                            break
+                    break
 
-    # Convert observer_analysis dict to ObserverAnalysis object
-    # Map from dataset format to actual ObserverAnalysis model
-    observer_analysis = ObserverAnalysis(
-        answer_quality=observer_analysis_data.get("quality", "good"),
-        confidence_level=observer_analysis_data.get("confidence", "medium"),
-        factual_accuracy=not observer_analysis_data.get("has_hallucination", False),
-        hallucination_detected=observer_analysis_data.get("has_hallucination", False),
-        off_topic=observer_analysis_data.get("quality") == "off_topic",
-        candidate_question_detected=False,
-        recommended_action=observer_analysis_data.get("recommended_action", "continue"),
-        difficulty_adjustment="maintain",
-        topics_covered=observer_analysis_data.get("covered_topics", []),
-        key_observations=[observer_analysis_data.get("reasoning", "")],
-    )
+        print("    → Creating ObserverAnalysis object...")
+        # Convert observer_analysis dict to ObserverAnalysis object
+        # Map from dataset format to actual ObserverAnalysis model
+        observer_analysis = ObserverAnalysis(
+            answer_quality=observer_analysis_data.get("quality", "good"),
+            confidence_level=observer_analysis_data.get("confidence", "medium"),
+            factual_accuracy=not observer_analysis_data.get("has_hallucination", False),
+            hallucination_detected=observer_analysis_data.get("has_hallucination", False),
+            off_topic=observer_analysis_data.get("quality") == "off_topic",
+            candidate_question_detected=False,
+            recommended_action=observer_analysis_data.get("recommended_action", "continue"),
+            difficulty_adjustment="maintain",
+            topics_covered=observer_analysis_data.get("covered_topics", []),
+            key_observations=[observer_analysis_data.get("reasoning", "")],
+        )
 
-    # Generate response
-    response, internal = interviewer.generate_response(
-        candidate_info=candidate_info,
-        conversation_history=conversation_history,
-        current_question=current_question,
-        candidate_response=candidate_response,
-        observer_analysis=observer_analysis,
-    )
+        print("    → Calling generate_response...")
+        # Generate response
+        response, internal = interviewer.generate_response(
+            candidate_info=candidate_info,
+            conversation_history=conversation_history,
+            current_question=current_question,
+            candidate_response=candidate_response,
+            observer_analysis=observer_analysis,
+        )
 
-    return {"response": response, "internal_thoughts": internal}
+        print("    → Response generated successfully")
+        return {"response": response, "internal_thoughts": internal}
+    except Exception as e:
+        import traceback
+        print(f"    ✗ Error in evaluate_interviewer_agent: {e}")
+        print("    ✗ Detailed traceback:")
+        traceback.print_exc()
+        raise
 
 
 def create_interviewer_evaluator(langfuse: Langfuse):
@@ -824,14 +840,18 @@ def run_evaluation(
             item = TestCaseItem(test_case)
 
             # Run task
+            print(f"  → Running {agent_name} agent...")
             output = task_fn(item)
+            print(f"  ✓ Agent execution complete")
 
             # Run evaluator
+            print(f"  → Running LLM-as-judge evaluator...")
             evaluation = evaluator(
                 input=item.input,
                 output=output,
                 expected_output=item.expected_output if item.expected_output else {}
             )
+            print(f"  ✓ Evaluation complete (score: {evaluation.value:.3f})")
 
             results.append({
                 "test_case": i + 1,
@@ -840,7 +860,10 @@ def run_evaluation(
                 "metadata": evaluation.metadata if hasattr(evaluation, 'metadata') else {}
             })
         except Exception as e:
+            import traceback
             print(f"  ✗ Error on test case {i + 1}: {e}")
+            print(f"  ✗ Traceback:")
+            traceback.print_exc()
             results.append({
                 "test_case": i + 1,
                 "score": 0.0,
