@@ -4,8 +4,7 @@ import os
 import json
 from abc import ABC, abstractmethod
 from typing import Optional, TYPE_CHECKING
-from langfuse import observe
-from langfuse.decorators import langfuse_context
+from langfuse import get_client
 
 if TYPE_CHECKING:
     from src.utils.prompt_loader import PromptMetadata
@@ -14,7 +13,6 @@ if TYPE_CHECKING:
 class BaseLLMClient(ABC):
     """Abstract base class for LLM clients."""
 
-    @observe(as_type="generation")
     @abstractmethod
     def generate(
         self,
@@ -35,7 +33,6 @@ class BaseLLMClient(ABC):
         """
         pass
 
-    @observe(as_type="generation")
     @abstractmethod
     def generate_json(
         self,
@@ -77,25 +74,41 @@ class OpenAIClient(BaseLLMClient):
         max_tokens: int = 2000,
         prompt_metadata: Optional["PromptMetadata"] = None,
     ) -> str:
-        # Link prompt to current trace if metadata is available
+        langfuse = get_client()
+
+        # Fetch the prompt from Langfuse if metadata is available
+        prompt = None
         if prompt_metadata:
             try:
-                langfuse_context.update_current_observation(
-                    prompt={"name": prompt_metadata.name, "version": prompt_metadata.version}
+                prompt = langfuse.get_prompt(
+                    prompt_metadata.name,
+                    version=prompt_metadata.version
                 )
             except Exception:
-                pass  # Silently fail if tracing not available
+                pass  # Silently fail if prompt not found
 
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-        return response.choices[0].message.content or ""
+        # Create a generation with the prompt linked
+        with langfuse.start_as_current_observation(
+            as_type="generation",
+            name="llm-generation",
+            prompt=prompt
+        ) as generation:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
+            content = response.choices[0].message.content or ""
+
+            # Update the generation with output
+            generation.update(output=content)
+
+            return content
 
     def generate_json(
         self,
@@ -105,27 +118,43 @@ class OpenAIClient(BaseLLMClient):
         max_tokens: int = 2000,
         prompt_metadata: Optional["PromptMetadata"] = None,
     ) -> dict:
-        # Link prompt to current trace if metadata is available
+        langfuse = get_client()
+
+        # Fetch the prompt from Langfuse if metadata is available
+        prompt = None
         if prompt_metadata:
             try:
-                langfuse_context.update_current_observation(
-                    prompt={"name": prompt_metadata.name, "version": prompt_metadata.version}
+                prompt = langfuse.get_prompt(
+                    prompt_metadata.name,
+                    version=prompt_metadata.version
                 )
             except Exception:
-                pass  # Silently fail if tracing not available
+                pass  # Silently fail if prompt not found
 
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=temperature,
-            max_tokens=max_tokens,
-            response_format={"type": "json_object"},
-        )
-        content = response.choices[0].message.content or "{}"
-        return json.loads(content)
+        # Create a generation with the prompt linked
+        with langfuse.start_as_current_observation(
+            as_type="generation",
+            name="llm-generation",
+            prompt=prompt
+        ) as generation:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format={"type": "json_object"},
+            )
+
+            content = response.choices[0].message.content or "{}"
+            result = json.loads(content)
+
+            # Update the generation with output
+            generation.update(output=result)
+
+            return result
 
 
 class AnthropicClient(BaseLLMClient):
@@ -150,22 +179,38 @@ class AnthropicClient(BaseLLMClient):
         max_tokens: int = 2000,
         prompt_metadata: Optional["PromptMetadata"] = None,
     ) -> str:
-        # Link prompt to current trace if metadata is available
+        langfuse = get_client()
+
+        # Fetch the prompt from Langfuse if metadata is available
+        prompt = None
         if prompt_metadata:
             try:
-                langfuse_context.update_current_observation(
-                    prompt={"name": prompt_metadata.name, "version": prompt_metadata.version}
+                prompt = langfuse.get_prompt(
+                    prompt_metadata.name,
+                    version=prompt_metadata.version
                 )
             except Exception:
-                pass  # Silently fail if tracing not available
+                pass  # Silently fail if prompt not found
 
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=max_tokens,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}],
-        )
-        return response.content[0].text
+        # Create a generation with the prompt linked
+        with langfuse.start_as_current_observation(
+            as_type="generation",
+            name="llm-generation",
+            prompt=prompt
+        ) as generation:
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=max_tokens,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}],
+            )
+
+            content = response.content[0].text
+
+            # Update the generation with output
+            generation.update(output=content)
+
+            return content
 
     def generate_json(
         self,
@@ -175,36 +220,54 @@ class AnthropicClient(BaseLLMClient):
         max_tokens: int = 2000,
         prompt_metadata: Optional["PromptMetadata"] = None,
     ) -> dict:
-        # Link prompt to current trace if metadata is available
+        langfuse = get_client()
+
+        # Fetch the prompt from Langfuse if metadata is available
+        prompt = None
         if prompt_metadata:
             try:
-                langfuse_context.update_current_observation(
-                    prompt={"name": prompt_metadata.name, "version": prompt_metadata.version}
+                prompt = langfuse.get_prompt(
+                    prompt_metadata.name,
+                    version=prompt_metadata.version
                 )
             except Exception:
-                pass  # Silently fail if tracing not available
+                pass  # Silently fail if prompt not found
 
-        json_system = (
-            system_prompt
-            + "\n\nIMPORTANT: You must respond with valid JSON only, no other text."
-        )
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=max_tokens,
-            system=json_system,
-            messages=[{"role": "user", "content": user_prompt}],
-        )
-        content = response.content[0].text
-        # Try to extract JSON if there's extra text
-        try:
-            return json.loads(content)
-        except json.JSONDecodeError:
-            # Try to find JSON in the response
-            start = content.find("{")
-            end = content.rfind("}") + 1
-            if start != -1 and end > start:
-                return json.loads(content[start:end])
-            raise
+        # Create a generation with the prompt linked
+        with langfuse.start_as_current_observation(
+            as_type="generation",
+            name="llm-generation",
+            prompt=prompt
+        ) as generation:
+            json_system = (
+                system_prompt
+                + "\n\nIMPORTANT: You must respond with valid JSON only, no other text."
+            )
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=max_tokens,
+                system=json_system,
+                messages=[{"role": "user", "content": user_prompt}],
+            )
+
+            content = response.content[0].text
+
+            # Try to extract JSON if there's extra text
+            try:
+                result = json.loads(content)
+            except json.JSONDecodeError:
+                # Try to find JSON in the response
+                start = content.find("{")
+                end = content.rfind("}") + 1
+                if start != -1 and end > start:
+                    result = json.loads(content[start:end])
+                else:
+                    raise
+
+            # Update the generation with output
+            generation.update(output=result)
+
+            return result
 
 
 class OpenRouterClient(BaseLLMClient):
@@ -239,25 +302,41 @@ class OpenRouterClient(BaseLLMClient):
         max_tokens: int = 2000,
         prompt_metadata: Optional["PromptMetadata"] = None,
     ) -> str:
-        # Link prompt to current trace if metadata is available
+        langfuse = get_client()
+
+        # Fetch the prompt from Langfuse if metadata is available
+        prompt = None
         if prompt_metadata:
             try:
-                langfuse_context.update_current_observation(
-                    prompt={"name": prompt_metadata.name, "version": prompt_metadata.version}
+                prompt = langfuse.get_prompt(
+                    prompt_metadata.name,
+                    version=prompt_metadata.version
                 )
             except Exception:
-                pass  # Silently fail if tracing not available
+                pass  # Silently fail if prompt not found
 
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-        return response.choices[0].message.content or ""
+        # Create a generation with the prompt linked
+        with langfuse.start_as_current_observation(
+            as_type="generation",
+            name="llm-generation",
+            prompt=prompt
+        ) as generation:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
+            content = response.choices[0].message.content or ""
+
+            # Update the generation with output
+            generation.update(output=content)
+
+            return content
 
     def generate_json(
         self,
@@ -267,43 +346,59 @@ class OpenRouterClient(BaseLLMClient):
         max_tokens: int = 2000,
         prompt_metadata: Optional["PromptMetadata"] = None,
     ) -> dict:
-        # Link prompt to current trace if metadata is available
+        langfuse = get_client()
+
+        # Fetch the prompt from Langfuse if metadata is available
+        prompt = None
         if prompt_metadata:
             try:
-                langfuse_context.update_current_observation(
-                    prompt={"name": prompt_metadata.name, "version": prompt_metadata.version}
+                prompt = langfuse.get_prompt(
+                    prompt_metadata.name,
+                    version=prompt_metadata.version
                 )
             except Exception:
-                pass  # Silently fail if tracing not available
+                pass  # Silently fail if prompt not found
 
-        # Add JSON instruction to system prompt
-        json_system = (
-            system_prompt
-            + "\n\nIMPORTANT: You must respond with valid JSON only, no other text."
-        )
+        # Create a generation with the prompt linked
+        with langfuse.start_as_current_observation(
+            as_type="generation",
+            name="llm-generation",
+            prompt=prompt
+        ) as generation:
+            # Add JSON instruction to system prompt
+            json_system = (
+                system_prompt
+                + "\n\nIMPORTANT: You must respond with valid JSON only, no other text."
+            )
 
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": json_system},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": json_system},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
 
-        content = response.choices[0].message.content or "{}"
+            content = response.choices[0].message.content or "{}"
 
-        # Try to extract JSON if there's extra text
-        try:
-            return json.loads(content)
-        except json.JSONDecodeError:
-            # Try to find JSON in the response
-            start = content.find("{")
-            end = content.rfind("}") + 1
-            if start != -1 and end > start:
-                return json.loads(content[start:end])
-            raise
+            # Try to extract JSON if there's extra text
+            try:
+                result = json.loads(content)
+            except json.JSONDecodeError:
+                # Try to find JSON in the response
+                start = content.find("{")
+                end = content.rfind("}") + 1
+                if start != -1 and end > start:
+                    result = json.loads(content[start:end])
+                else:
+                    raise
+
+            # Update the generation with output
+            generation.update(output=result)
+
+            return result
 
 
 def get_llm_client(provider: str = "openai", **kwargs) -> BaseLLMClient:
