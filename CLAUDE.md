@@ -19,8 +19,8 @@ pip install -r requirements.txt
 
 # Configure environment
 cp .env.example .env
-# Add one of: OPENAI_API_KEY, ANTHROPIC_API_KEY, or OPENROUTER_API_KEY to .env
-# For OpenRouter, also set OPENROUTER_MODEL (optional, defaults to anthropic/claude-3.5-sonnet)
+# Add OPENROUTER_API_KEY to .env
+# Also set OPENROUTER_MODEL (optional, defaults to anthropic/claude-3.5-sonnet)
 # Optionally add Langfuse credentials for tracing: LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_HOST
 ```
 
@@ -110,12 +110,10 @@ The `InterviewOrchestrator` class coordinates all agents and manages interview l
 - Triggers feedback generation on interview completion
 
 ### LLM Abstraction (`src/core/llm_client.py`)
-Factory pattern for multi-provider support:
-- `BaseLLMClient` - Abstract interface with `generate()` and `generate_json()` methods
-- `OpenAIClient` - Uses `gpt-4o-mini` by default
-- `AnthropicClient` - Uses `claude-3-5-sonnet-20241022` by default
+LLM client abstraction using OpenRouter:
+- `BaseLLMClient` - Abstract interface with `generate()`, `generate_json()`, and `generate_structured()` methods
 - `OpenRouterClient` - Uses `anthropic/claude-3.5-sonnet` by default, supports any OpenRouter model
-- Provider auto-selected based on available API key (priority: OpenRouter → OpenAI → Anthropic)
+- Configure model via OPENROUTER_MODEL environment variable
 
 ### Data Models (`src/core/models.py`)
 Structured with dataclasses:
