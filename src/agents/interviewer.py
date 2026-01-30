@@ -14,9 +14,9 @@ from src.utils.prompt_loader import load_prompt
 
 
 # Load prompts from files
-INTERVIEWER_SYSTEM_PROMPT = load_prompt("interviewer", "system")
-INTERVIEWER_GREETING_PROMPT = load_prompt("interviewer", "greeting")
-INTERVIEWER_RESPONSE_PROMPT = load_prompt("interviewer", "response")
+INTERVIEWER_SYSTEM_PROMPT, INTERVIEWER_SYSTEM_METADATA = load_prompt("interviewer", "system")
+INTERVIEWER_GREETING_PROMPT, INTERVIEWER_GREETING_METADATA = load_prompt("interviewer", "greeting")
+INTERVIEWER_RESPONSE_PROMPT, INTERVIEWER_RESPONSE_METADATA = load_prompt("interviewer", "response")
 
 
 class InterviewerAgent:
@@ -45,6 +45,7 @@ class InterviewerAgent:
             system_prompt=INTERVIEWER_SYSTEM_PROMPT,
             user_prompt=prompt,
             temperature=0.7,
+            prompt_metadata=INTERVIEWER_SYSTEM_METADATA,
         )
 
         greeting = response.get("greeting", "Hello! Please tell me about yourself.")
@@ -113,6 +114,7 @@ class InterviewerAgent:
             system_prompt=INTERVIEWER_SYSTEM_PROMPT,
             user_prompt=prompt,
             temperature=0.7,
+            prompt_metadata=INTERVIEWER_SYSTEM_METADATA,
         )
 
         message = response.get("response", "Let's continue with the next question.")
@@ -184,6 +186,7 @@ Return a JSON object:
             system_prompt=INTERVIEWER_SYSTEM_PROMPT,
             user_prompt=prompt,
             temperature=0.7,
+            prompt_metadata=INTERVIEWER_SYSTEM_METADATA,
         )
 
         message = response.get(

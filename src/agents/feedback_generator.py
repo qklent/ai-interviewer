@@ -16,8 +16,8 @@ from src.utils.prompt_loader import load_prompt
 
 
 # Load prompts from files
-FEEDBACK_SYSTEM_PROMPT = load_prompt("feedback_generator", "system")
-FEEDBACK_PROMPT = load_prompt("feedback_generator", "feedback")
+FEEDBACK_SYSTEM_PROMPT, FEEDBACK_SYSTEM_METADATA = load_prompt("feedback_generator", "system")
+FEEDBACK_PROMPT, FEEDBACK_PROMPT_METADATA = load_prompt("feedback_generator", "feedback")
 
 
 class FeedbackGeneratorAgent:
@@ -59,6 +59,7 @@ class FeedbackGeneratorAgent:
             user_prompt=prompt,
             temperature=0.3,
             max_tokens=3000,
+            prompt_metadata=FEEDBACK_SYSTEM_METADATA,
         )
 
         # Parse the response into FinalFeedback object

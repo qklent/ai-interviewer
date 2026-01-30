@@ -3,8 +3,12 @@
 import os
 import json
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from langfuse import observe
+from langfuse.decorators import langfuse_context
+
+if TYPE_CHECKING:
+    from src.utils.prompt_loader import PromptMetadata
 
 
 class BaseLLMClient(ABC):
@@ -18,8 +22,17 @@ class BaseLLMClient(ABC):
         user_prompt: str,
         temperature: float = 0.7,
         max_tokens: int = 2000,
+        prompt_metadata: Optional["PromptMetadata"] = None,
     ) -> str:
-        """Generate a response from the LLM."""
+        """Generate a response from the LLM.
+
+        Args:
+            system_prompt: System prompt text
+            user_prompt: User prompt text
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
+            prompt_metadata: Optional metadata for linking to Langfuse prompts
+        """
         pass
 
     @observe(as_type="generation")
@@ -30,8 +43,17 @@ class BaseLLMClient(ABC):
         user_prompt: str,
         temperature: float = 0.3,
         max_tokens: int = 2000,
+        prompt_metadata: Optional["PromptMetadata"] = None,
     ) -> dict:
-        """Generate a JSON response from the LLM."""
+        """Generate a JSON response from the LLM.
+
+        Args:
+            system_prompt: System prompt text
+            user_prompt: User prompt text
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
+            prompt_metadata: Optional metadata for linking to Langfuse prompts
+        """
         pass
 
 
@@ -53,7 +75,17 @@ class OpenAIClient(BaseLLMClient):
         user_prompt: str,
         temperature: float = 0.7,
         max_tokens: int = 2000,
+        prompt_metadata: Optional["PromptMetadata"] = None,
     ) -> str:
+        # Link prompt to current trace if metadata is available
+        if prompt_metadata:
+            try:
+                langfuse_context.update_current_observation(
+                    prompt={"name": prompt_metadata.name, "version": prompt_metadata.version}
+                )
+            except Exception:
+                pass  # Silently fail if tracing not available
+
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[
@@ -71,7 +103,17 @@ class OpenAIClient(BaseLLMClient):
         user_prompt: str,
         temperature: float = 0.3,
         max_tokens: int = 2000,
+        prompt_metadata: Optional["PromptMetadata"] = None,
     ) -> dict:
+        # Link prompt to current trace if metadata is available
+        if prompt_metadata:
+            try:
+                langfuse_context.update_current_observation(
+                    prompt={"name": prompt_metadata.name, "version": prompt_metadata.version}
+                )
+            except Exception:
+                pass  # Silently fail if tracing not available
+
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[
@@ -106,7 +148,17 @@ class AnthropicClient(BaseLLMClient):
         user_prompt: str,
         temperature: float = 0.7,
         max_tokens: int = 2000,
+        prompt_metadata: Optional["PromptMetadata"] = None,
     ) -> str:
+        # Link prompt to current trace if metadata is available
+        if prompt_metadata:
+            try:
+                langfuse_context.update_current_observation(
+                    prompt={"name": prompt_metadata.name, "version": prompt_metadata.version}
+                )
+            except Exception:
+                pass  # Silently fail if tracing not available
+
         response = self.client.messages.create(
             model=self.model,
             max_tokens=max_tokens,
@@ -121,7 +173,17 @@ class AnthropicClient(BaseLLMClient):
         user_prompt: str,
         temperature: float = 0.3,
         max_tokens: int = 2000,
+        prompt_metadata: Optional["PromptMetadata"] = None,
     ) -> dict:
+        # Link prompt to current trace if metadata is available
+        if prompt_metadata:
+            try:
+                langfuse_context.update_current_observation(
+                    prompt={"name": prompt_metadata.name, "version": prompt_metadata.version}
+                )
+            except Exception:
+                pass  # Silently fail if tracing not available
+
         json_system = (
             system_prompt
             + "\n\nIMPORTANT: You must respond with valid JSON only, no other text."
@@ -175,7 +237,17 @@ class OpenRouterClient(BaseLLMClient):
         user_prompt: str,
         temperature: float = 0.7,
         max_tokens: int = 2000,
+        prompt_metadata: Optional["PromptMetadata"] = None,
     ) -> str:
+        # Link prompt to current trace if metadata is available
+        if prompt_metadata:
+            try:
+                langfuse_context.update_current_observation(
+                    prompt={"name": prompt_metadata.name, "version": prompt_metadata.version}
+                )
+            except Exception:
+                pass  # Silently fail if tracing not available
+
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[
@@ -193,7 +265,17 @@ class OpenRouterClient(BaseLLMClient):
         user_prompt: str,
         temperature: float = 0.3,
         max_tokens: int = 2000,
+        prompt_metadata: Optional["PromptMetadata"] = None,
     ) -> dict:
+        # Link prompt to current trace if metadata is available
+        if prompt_metadata:
+            try:
+                langfuse_context.update_current_observation(
+                    prompt={"name": prompt_metadata.name, "version": prompt_metadata.version}
+                )
+            except Exception:
+                pass  # Silently fail if tracing not available
+
         # Add JSON instruction to system prompt
         json_system = (
             system_prompt

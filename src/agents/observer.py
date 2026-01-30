@@ -10,8 +10,8 @@ from src.utils.tracing import is_tracing_enabled
 
 
 # Load prompts from files
-OBSERVER_SYSTEM_PROMPT = load_prompt("observer", "system")
-OBSERVER_ANALYSIS_PROMPT = load_prompt("observer", "analysis")
+OBSERVER_SYSTEM_PROMPT, OBSERVER_SYSTEM_METADATA = load_prompt("observer", "system")
+OBSERVER_ANALYSIS_PROMPT, OBSERVER_ANALYSIS_METADATA = load_prompt("observer", "analysis")
 
 
 class ObserverAgent:
@@ -60,6 +60,7 @@ class ObserverAgent:
             system_prompt=OBSERVER_SYSTEM_PROMPT,
             user_prompt=prompt,
             temperature=0.3,
+            prompt_metadata=OBSERVER_SYSTEM_METADATA,
         )
 
         # Update topics covered
