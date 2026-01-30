@@ -33,12 +33,16 @@ def test_initialization():
     """Test that MultiModelFeedbackGenerator can be initialized."""
     try:
         generator = MultiModelFeedbackGenerator(
-            google_model="google/gemini-2.0-flash-thinking-exp-1219",
-            anthropic_model="anthropic/claude-3.5-sonnet",
-            openai_model="openai/gpt-4o",
+            evaluator_models=[
+                "google/gemini-2.0-flash-thinking-exp-1219",
+                "anthropic/claude-3.5-sonnet"
+            ],
+            aggregator_model="openai/gpt-4o",
             save_intermediate=True,
         )
         print("✓ MultiModelFeedbackGenerator initialized successfully")
+        print(f"  - Evaluator models: {generator.evaluator_models}")
+        print(f"  - Aggregator model: {generator.aggregator_model}")
         print(f"  - Fallback mode: {generator.fallback_mode}")
         print(f"  - Save intermediate: {generator.save_intermediate}")
         return generator
@@ -54,20 +58,18 @@ def test_configuration():
     print(f"✓ FEEDBACK_MODE: {feedback_mode}")
 
     if feedback_mode == "multi_model":
-        google_model = os.getenv(
-            "FEEDBACK_MODEL_GOOGLE", "google/gemini-2.0-flash-thinking-exp-1219"
+        evaluator_models_str = os.getenv(
+            "FEEDBACK_EVALUATOR_MODELS",
+            "google/gemini-2.0-flash-thinking-exp-1219,anthropic/claude-3.5-sonnet"
         )
-        anthropic_model = os.getenv(
-            "FEEDBACK_MODEL_ANTHROPIC", "anthropic/claude-3.5-sonnet"
-        )
-        openai_model = os.getenv("FEEDBACK_MODEL_OPENAI", "openai/gpt-4o")
+        evaluator_models = [m.strip() for m in evaluator_models_str.split(",")]
+        aggregator_model = os.getenv("FEEDBACK_AGGREGATOR_MODEL", "openai/gpt-4o")
         save_intermediate = (
             os.getenv("SAVE_INTERMEDIATE_FEEDBACK", "true").lower() == "true"
         )
 
-        print(f"  - Google model: {google_model}")
-        print(f"  - Anthropic model: {anthropic_model}")
-        print(f"  - OpenAI model: {openai_model}")
+        print(f"  - Evaluator models: {evaluator_models}")
+        print(f"  - Aggregator model: {aggregator_model}")
         print(f"  - Save intermediate: {save_intermediate}")
 
 
@@ -87,9 +89,11 @@ def test_mode_switching():
     # Test multi-model mode
     os.environ["FEEDBACK_MODE"] = "multi_model"
     multi_generator = MultiModelFeedbackGenerator(
-        google_model="google/gemini-2.0-flash-thinking-exp-1219",
-        anthropic_model="anthropic/claude-3.5-sonnet",
-        openai_model="openai/gpt-4o",
+        evaluator_models=[
+            "google/gemini-2.0-flash-thinking-exp-1219",
+            "anthropic/claude-3.5-sonnet"
+        ],
+        aggregator_model="openai/gpt-4o",
         save_intermediate=True,
     )
     print("✓ Multi-model mode: MultiModelFeedbackGenerator initialized")
@@ -167,9 +171,11 @@ def test_serialization():
 
     # Test serialization
     generator = MultiModelFeedbackGenerator(
-        google_model="google/gemini-2.0-flash-thinking-exp-1219",
-        anthropic_model="anthropic/claude-3.5-sonnet",
-        openai_model="openai/gpt-4o",
+        evaluator_models=[
+            "google/gemini-2.0-flash-thinking-exp-1219",
+            "anthropic/claude-3.5-sonnet"
+        ],
+        aggregator_model="openai/gpt-4o",
     )
 
     serialized = generator._serialize_feedback(feedback)

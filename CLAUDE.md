@@ -205,15 +205,18 @@ Lines before `---` are metadata (key: value format). Lines after are candidate r
 
 ## Multi-Model Feedback Generation
 
-The system supports an optional multi-model feedback generation mode that reduces bias and improves evaluation quality by using three different LLMs from different providers.
+The system supports an optional multi-model feedback generation mode that reduces bias and improves evaluation quality by using multiple LLMs for independent evaluations and one aggregator model to synthesize them.
 
 ### Architecture
 
 Following LLM-as-a-judge best practices:
 
-1. **Model 1 (Google Gemini)** - Generates independent feedback evaluation
-2. **Model 2 (Anthropic Claude)** - Generates independent feedback evaluation
-3. **Model 3 (OpenAI GPT-4)** - Aggregates both feedbacks into final synthesis
+1. **Evaluator Models** (2+ models) - Generate independent feedback evaluations
+   - Default: Google Gemini and Anthropic Claude
+   - Configurable: Can use any models or providers
+2. **Aggregator Model** (1 model) - Synthesizes all evaluations into final feedback
+   - Default: OpenAI GPT-4
+   - Configurable: Can use any model
 
 This approach leverages diverse model perspectives while minimizing model-specific biases.
 
@@ -225,10 +228,11 @@ Enable multi-model mode by setting environment variables in `.env`:
 # Enable multi-model feedback generation
 FEEDBACK_MODE=multi_model
 
-# Configure models (defaults shown)
-FEEDBACK_MODEL_GOOGLE=google/gemini-2.0-flash-thinking-exp-1219
-FEEDBACK_MODEL_ANTHROPIC=anthropic/claude-3.5-sonnet
-FEEDBACK_MODEL_OPENAI=openai/gpt-4o
+# Evaluator models: Comma-separated list (minimum 2 required)
+FEEDBACK_EVALUATOR_MODELS=google/gemini-2.0-flash-thinking-exp-1219,anthropic/claude-3.5-sonnet
+
+# Aggregator model: Single model for synthesis
+FEEDBACK_AGGREGATOR_MODEL=openai/gpt-4o
 
 # Optional: Save intermediate feedbacks to logs for analysis
 SAVE_INTERMEDIATE_FEEDBACK=true
@@ -238,23 +242,34 @@ SAVE_INTERMEDIATE_FEEDBACK=true
 MULTIMODEL_FALLBACK_MODE=partial
 ```
 
+**Examples:**
+```bash
+# Use 3 evaluators (Google, Anthropic, OpenAI) + Anthropic aggregator
+FEEDBACK_EVALUATOR_MODELS=google/gemini-2.0-flash,anthropic/claude-3.5-sonnet,openai/gpt-4o
+FEEDBACK_AGGREGATOR_MODEL=anthropic/claude-3.5-sonnet
+
+# Use 2 different Claude versions + GPT aggregator
+FEEDBACK_EVALUATOR_MODELS=anthropic/claude-3.5-sonnet,anthropic/claude-3-opus
+FEEDBACK_AGGREGATOR_MODEL=openai/gpt-4o
+```
+
 ### How It Works
 
-**Stage 1 & 2: Independent Evaluations**
-- Google and Anthropic models evaluate the interview independently
-- Both use the same `FeedbackGeneratorAgent` with different LLM clients
-- No communication between models (eliminates anchoring bias)
+**Stage 1: Independent Evaluations**
+- Each evaluator model analyzes the interview independently
+- All use the same `FeedbackGeneratorAgent` with different LLM clients
+- No communication between evaluators (eliminates anchoring bias)
 
-**Stage 3: Meta-Evaluation**
-- OpenAI model receives both independent evaluations
+**Stage 2: Meta-Evaluation**
+- Aggregator model receives all independent evaluations
 - Identifies areas of consensus (high confidence signal)
 - Analyzes areas of divergence (makes reasoned final decisions)
 - Synthesizes into unified, balanced assessment
 
 **Error Handling:**
-- If both Models 1 & 2 fail: Falls back to single-model approach
-- If one model fails: Uses successful evaluation (skips aggregation)
-- If aggregation fails: Falls back to Anthropic evaluation
+- If all evaluators fail: Falls back to single-model approach
+- If only one evaluator succeeds: Uses that evaluation (skips aggregation)
+- If aggregation fails: Falls back to first successful evaluation
 - Configurable fallback modes via `MULTIMODEL_FALLBACK_MODE`
 
 ### Benefits

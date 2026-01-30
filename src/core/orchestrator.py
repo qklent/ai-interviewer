@@ -56,10 +56,20 @@ class InterviewOrchestrator:
 
             if feedback_mode == "multi_model":
                 from src.agents.multi_model_feedback_generator import MultiModelFeedbackGenerator
+
+                # Parse evaluator models from comma-separated list
+                evaluator_models_str = os.getenv(
+                    "FEEDBACK_EVALUATOR_MODELS",
+                    "google/gemini-2.0-flash-thinking-exp-1219,anthropic/claude-3.5-sonnet"
+                )
+                evaluator_models = [m.strip() for m in evaluator_models_str.split(",")]
+
+                # Get aggregator model
+                aggregator_model = os.getenv("FEEDBACK_AGGREGATOR_MODEL", "openai/gpt-4o")
+
                 self.feedback_generator = MultiModelFeedbackGenerator(
-                    google_model=os.getenv("FEEDBACK_MODEL_GOOGLE", "google/gemini-2.0-flash-thinking-exp-1219"),
-                    anthropic_model=os.getenv("FEEDBACK_MODEL_ANTHROPIC", "anthropic/claude-3.5-sonnet"),
-                    openai_model=os.getenv("FEEDBACK_MODEL_OPENAI", "openai/gpt-4o"),
+                    evaluator_models=evaluator_models,
+                    aggregator_model=aggregator_model,
                     save_intermediate=os.getenv("SAVE_INTERMEDIATE_FEEDBACK", "true").lower() == "true",
                 )
                 logger.info("Initialized MultiModelFeedbackGenerator")

@@ -18,45 +18,52 @@ class MultiModelFeedbackGenerator:
     """Generates feedback using multiple models for reduced bias and improved quality.
 
     Architecture:
-    - Model 1 (Google): Generate independent feedback
-    - Model 2 (Anthropic): Generate independent feedback
-    - Model 3 (OpenAI): Aggregate both feedbacks into final synthesis
+    - Multiple evaluator models: Generate independent feedback evaluations
+    - Single aggregator model: Synthesizes all evaluations into final feedback
     """
 
     def __init__(
         self,
-        google_model: str,
-        anthropic_model: str,
-        openai_model: str,
+        evaluator_models: list[str],
+        aggregator_model: str,
         save_intermediate: bool = True,
     ):
         """Initialize multi-model feedback generator.
 
         Args:
-            google_model: Google model identifier (e.g., google/gemini-2.0-flash-thinking-exp-1219)
-            anthropic_model: Anthropic model identifier (e.g., anthropic/claude-3.5-sonnet)
-            openai_model: OpenAI model identifier (e.g., openai/gpt-4o)
+            evaluator_models: List of model identifiers for independent evaluations
+                            (e.g., ['google/gemini-2.0-flash', 'anthropic/claude-3.5-sonnet'])
+            aggregator_model: Model identifier for aggregating evaluations
+                            (e.g., 'openai/gpt-4o')
             save_intermediate: Whether to save intermediate feedback results
         """
+        if not evaluator_models or len(evaluator_models) < 2:
+            raise ValueError("At least 2 evaluator models are required")
+
         logger.info(
             f"Initializing MultiModelFeedbackGenerator: "
-            f"google={google_model}, anthropic={anthropic_model}, openai={openai_model}"
+            f"evaluators={evaluator_models}, aggregator={aggregator_model}"
         )
 
-        # Create three separate LLM clients
-        self.google_llm = get_llm_client("openrouter", model=google_model)
-        self.anthropic_llm = get_llm_client("openrouter", model=anthropic_model)
-        self.openai_llm = get_llm_client("openrouter", model=openai_model)
+        # Create LLM clients and generators for each evaluator model
+        self.evaluator_models = evaluator_models
+        self.evaluator_llms = [
+            get_llm_client("openrouter", model=model) for model in evaluator_models
+        ]
+        self.evaluator_generators = [
+            FeedbackGeneratorAgent(llm) for llm in self.evaluator_llms
+        ]
 
-        # Create feedback generator instances for Models 1 & 2
-        self.google_generator = FeedbackGeneratorAgent(self.google_llm)
-        self.anthropic_generator = FeedbackGeneratorAgent(self.anthropic_llm)
+        # Create aggregator LLM client
+        self.aggregator_model = aggregator_model
+        self.aggregator_llm = get_llm_client("openrouter", model=aggregator_model)
 
         self.save_intermediate = save_intermediate
         self.fallback_mode = os.getenv("MULTIMODEL_FALLBACK_MODE", "partial")
 
         logger.info(
-            f"MultiModelFeedbackGenerator initialized with fallback_mode={self.fallback_mode}"
+            f"MultiModelFeedbackGenerator initialized with {len(evaluator_models)} evaluators "
+            f"and fallback_mode={self.fallback_mode}"
         )
 
     @observe(name="MultiModel: Generate Feedback")
@@ -69,47 +76,53 @@ class MultiModelFeedbackGenerator:
 
         Returns:
             Tuple of (final_feedback, formatted_string, intermediate_results)
-            - intermediate_results is dict with models 1 & 2 outputs (if save_intermediate=True)
+            - intermediate_results is dict with all evaluator outputs (if save_intermediate=True)
         """
         logger.info("Starting multi-model feedback generation")
 
-        # Stage 1 & 2: Generate independent feedbacks
-        feedback_1, formatted_1, feedback_2, formatted_2 = (
-            self._generate_independent_feedbacks(candidate_info, conversation_history)
+        # Stage 1: Generate independent feedbacks from all evaluators
+        evaluator_results = self._generate_independent_feedbacks(
+            candidate_info, conversation_history
         )
 
+        # Filter out failed evaluations
+        successful_results = [
+            (feedback, formatted, model)
+            for feedback, formatted, model in evaluator_results
+            if feedback is not None
+        ]
+
         # Handle failure cases
-        if feedback_1 is None and feedback_2 is None:
-            logger.error("Both evaluation models failed, falling back to single-model")
+        if len(successful_results) == 0:
+            logger.error("All evaluation models failed, falling back to single-model")
             return self._fallback_single_model(candidate_info, conversation_history)
 
-        if feedback_1 is None or feedback_2 is None:
-            logger.warning("One model failed, handling partial failure")
-            return self._handle_partial_failure(
-                feedback_1, formatted_1, feedback_2, formatted_2
-            )
+        if len(successful_results) == 1:
+            logger.warning("Only one model succeeded, using single evaluation")
+            return self._handle_single_success(successful_results[0], evaluator_results)
 
-        # Stage 3: Aggregate with Model 3
+        # Stage 2: Aggregate successful feedbacks
         try:
             final_feedback, formatted_final = self._aggregate_feedbacks(
-                candidate_info, feedback_1, feedback_2
+                candidate_info, successful_results
             )
             logger.info("Multi-model feedback generation completed successfully")
         except Exception as e:
-            logger.error(f"Aggregation failed: {e}, falling back to Anthropic feedback")
-            # Use Anthropic (Model 2) as fallback - typically most balanced
-            final_feedback = feedback_2
-            formatted_final = formatted_2
+            logger.error(f"Aggregation failed: {e}, falling back to first successful feedback")
+            # Use first successful evaluation as fallback
+            final_feedback = successful_results[0][0]
+            formatted_final = successful_results[0][1]
 
         # Build intermediate results if requested
         intermediate = None
         if self.save_intermediate:
-            intermediate = {
-                "google_feedback": self._serialize_feedback(feedback_1),
-                "anthropic_feedback": self._serialize_feedback(feedback_2),
-                "google_formatted": formatted_1,
-                "anthropic_formatted": formatted_2,
-            }
+            intermediate = {}
+            for i, (feedback, formatted, model) in enumerate(evaluator_results):
+                intermediate[f"evaluator_{i}_model"] = model
+                intermediate[f"evaluator_{i}_feedback"] = (
+                    self._serialize_feedback(feedback) if feedback else None
+                )
+                intermediate[f"evaluator_{i}_formatted"] = formatted
 
         return final_feedback, formatted_final, intermediate
 
@@ -118,82 +131,72 @@ class MultiModelFeedbackGenerator:
         self,
         candidate_info: CandidateInfo,
         conversation_history: list[dict],
-    ) -> tuple[
-        Optional[FinalFeedback],
-        Optional[str],
-        Optional[FinalFeedback],
-        Optional[str],
-    ]:
-        """Generate independent feedbacks from Models 1 and 2.
+    ) -> list[tuple[Optional[FinalFeedback], Optional[str], str]]:
+        """Generate independent feedbacks from all evaluator models.
 
         Returns:
-            Tuple of (feedback_1, formatted_1, feedback_2, formatted_2)
+            List of tuples: [(feedback, formatted_string, model_name), ...]
         """
-        feedback_1 = None
-        formatted_1 = None
-        feedback_2 = None
-        formatted_2 = None
+        results = []
 
-        # Generate Google feedback (Model 1)
-        try:
-            logger.info("Generating Google (Model 1) feedback...")
-            feedback_1, formatted_1 = self.google_generator.generate_feedback(
-                candidate_info, conversation_history
-            )
-            logger.info("Google feedback generated successfully")
-        except Exception as e:
-            logger.error(
-                f"Google feedback generation failed: {e}",
-                exc_info=True,
-                extra={
-                    "model": "google",
-                    "candidate": candidate_info.name,
-                    "error_type": type(e).__name__,
-                },
-            )
+        for i, (generator, model) in enumerate(
+            zip(self.evaluator_generators, self.evaluator_models)
+        ):
+            feedback = None
+            formatted = None
 
-        # Generate Anthropic feedback (Model 2)
-        try:
-            logger.info("Generating Anthropic (Model 2) feedback...")
-            feedback_2, formatted_2 = self.anthropic_generator.generate_feedback(
-                candidate_info, conversation_history
-            )
-            logger.info("Anthropic feedback generated successfully")
-        except Exception as e:
-            logger.error(
-                f"Anthropic feedback generation failed: {e}",
-                exc_info=True,
-                extra={
-                    "model": "anthropic",
-                    "candidate": candidate_info.name,
-                    "error_type": type(e).__name__,
-                },
-            )
+            try:
+                logger.info(f"Generating feedback from evaluator {i+1} ({model})...")
+                feedback, formatted = generator.generate_feedback(
+                    candidate_info, conversation_history
+                )
+                logger.info(f"Evaluator {i+1} ({model}) feedback generated successfully")
+            except Exception as e:
+                logger.error(
+                    f"Evaluator {i+1} ({model}) feedback generation failed: {e}",
+                    exc_info=True,
+                    extra={
+                        "model": model,
+                        "evaluator_index": i,
+                        "candidate": candidate_info.name,
+                        "error_type": type(e).__name__,
+                    },
+                )
 
-        return feedback_1, formatted_1, feedback_2, formatted_2
+            results.append((feedback, formatted, model))
+
+        return results
 
     @observe(name="MultiModel: Aggregate Feedbacks")
     def _aggregate_feedbacks(
         self,
         candidate_info: CandidateInfo,
-        feedback_1: FinalFeedback,
-        feedback_2: FinalFeedback,
+        successful_results: list[tuple[FinalFeedback, str, str]],
     ) -> tuple[FinalFeedback, str]:
-        """Aggregate two independent feedbacks using Model 3.
+        """Aggregate multiple independent feedbacks using aggregator model.
 
         Args:
             candidate_info: Candidate information
-            feedback_1: Feedback from Google (Model 1)
-            feedback_2: Feedback from Anthropic (Model 2)
+            successful_results: List of (feedback, formatted, model_name) tuples
 
         Returns:
             Tuple of (aggregated_feedback, formatted_string)
         """
-        logger.info("Starting feedback aggregation with OpenAI (Model 3)")
+        logger.info(
+            f"Starting feedback aggregation with {self.aggregator_model} "
+            f"({len(successful_results)} feedbacks to aggregate)"
+        )
 
-        # Serialize feedbacks to JSON for Model 3
-        feedback_1_dict = self._serialize_feedback(feedback_1)
-        feedback_2_dict = self._serialize_feedback(feedback_2)
+        # Serialize all feedbacks to JSON for aggregator
+        import json
+
+        feedbacks_dict = [
+            {
+                "model": model,
+                "feedback": self._serialize_feedback(feedback),
+            }
+            for feedback, _, model in successful_results
+        ]
 
         # Load aggregation prompts
         aggregate_system, system_metadata = load_prompt(
@@ -203,20 +206,34 @@ class MultiModelFeedbackGenerator:
             "feedback_generator", "aggregate_feedback"
         )
 
-        # Format aggregation prompt
-        import json
+        # Format all feedbacks as readable sections
+        feedbacks_sections = []
+        for i, item in enumerate(feedbacks_dict, 1):
+            section = f"### EVALUATOR {i} ({item['model']}) ASSESSMENT\n\n"
+            section += json.dumps(item['feedback'], indent=2, ensure_ascii=False)
+            feedbacks_sections.append(section)
 
+        all_feedbacks_str = "\n\n".join(feedbacks_sections)
+
+        # Format aggregation prompt with all feedbacks
         aggregate_prompt = aggregate_template.format(
             name=candidate_info.name,
             position=candidate_info.position,
             target_grade=candidate_info.target_grade.value,
             experience=candidate_info.experience,
-            feedback_1=json.dumps(feedback_1_dict, indent=2, ensure_ascii=False),
-            feedback_2=json.dumps(feedback_2_dict, indent=2, ensure_ascii=False),
+            all_feedbacks=all_feedbacks_str,
+            num_feedbacks=len(successful_results),
+            # Backward compatibility: provide first two feedbacks if template uses them
+            feedback_1=json.dumps(feedbacks_dict[0]["feedback"], indent=2, ensure_ascii=False)
+            if len(feedbacks_dict) > 0
+            else "{}",
+            feedback_2=json.dumps(feedbacks_dict[1]["feedback"], indent=2, ensure_ascii=False)
+            if len(feedbacks_dict) > 1
+            else "{}",
         )
 
-        # Generate aggregated feedback with Model 3
-        response = self.openai_llm.generate_structured(
+        # Generate aggregated feedback with aggregator model
+        response = self.aggregator_llm.generate_structured(
             system_prompt=aggregate_system,
             user_prompt=aggregate_prompt,
             response_format=FeedbackSchema,
@@ -234,44 +251,40 @@ class MultiModelFeedbackGenerator:
         logger.info("Feedback aggregation completed successfully")
         return final_feedback, formatted
 
-    def _handle_partial_failure(
+    def _handle_single_success(
         self,
-        feedback_1: Optional[FinalFeedback],
-        formatted_1: Optional[str],
-        feedback_2: Optional[FinalFeedback],
-        formatted_2: Optional[str],
+        successful_result: tuple[FinalFeedback, str, str],
+        all_results: list[tuple[Optional[FinalFeedback], Optional[str], str]],
     ) -> tuple[FinalFeedback, str, Optional[dict]]:
-        """Handle case where one model succeeded and one failed.
+        """Handle case where only one model succeeded.
 
         Returns single successful feedback (skips aggregation).
         """
         if self.fallback_mode == "fail":
             logger.error("Fallback mode is 'fail', raising exception")
-            raise Exception("One model failed and fallback_mode=fail")
+            raise Exception("Only one model succeeded and fallback_mode=fail")
 
         if self.fallback_mode == "single_model":
             logger.warning("Fallback mode is 'single_model', using default model")
             return self._fallback_single_model(None, None)
 
-        # Default: partial mode - use whichever succeeded
-        successful_feedback = feedback_1 or feedback_2
-        successful_formatted = formatted_1 or formatted_2
+        # Default: partial mode - use the successful evaluation
+        feedback, formatted, model = successful_result
 
-        logger.warning(
-            f"Using {'Google' if feedback_1 else 'Anthropic'} feedback (no aggregation)"
-        )
+        logger.warning(f"Using {model} feedback (no aggregation - only 1 succeeded)")
 
         intermediate = None
         if self.save_intermediate:
-            intermediate = {
-                "google_feedback": self._serialize_feedback(feedback_1) if feedback_1 else None,
-                "anthropic_feedback": self._serialize_feedback(feedback_2) if feedback_2 else None,
-                "google_formatted": formatted_1,
-                "anthropic_formatted": formatted_2,
-                "note": "Partial failure - only one model succeeded",
-            }
+            intermediate = {}
+            for i, (fb, fmt, mdl) in enumerate(all_results):
+                intermediate[f"evaluator_{i}_model"] = mdl
+                intermediate[f"evaluator_{i}_feedback"] = (
+                    self._serialize_feedback(fb) if fb else None
+                )
+                intermediate[f"evaluator_{i}_formatted"] = fmt
+            intermediate["note"] = "Only one evaluator succeeded - no aggregation performed"
 
-        return successful_feedback, successful_formatted, intermediate
+        return feedback, formatted, intermediate
 
     def _fallback_single_model(
         self,
