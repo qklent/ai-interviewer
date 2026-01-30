@@ -198,6 +198,8 @@ class OpenAIClient(BaseLLMClient):
         max_tokens: int = 2000,
         prompt_metadata: Optional["PromptMetadata"] = None,
     ) -> T:
+        logger.debug(f"OpenAI generate_structured: using native parse() API with response_format={response_format.__name__}")
+
         langfuse = get_client()
 
         # Fetch the prompt from Langfuse if metadata is available
@@ -233,6 +235,7 @@ class OpenAIClient(BaseLLMClient):
             # Update the generation with output
             generation.update(output=parsed_output.model_dump() if parsed_output else None)
 
+            logger.debug(f"Successfully parsed OpenAI response into {response_format.__name__}")
             return parsed_output
 
 
@@ -389,7 +392,7 @@ class AnthropicClient(BaseLLMClient):
         Since Anthropic doesn't have native structured outputs like OpenAI,
         we use generate_json and parse it into the Pydantic model.
         """
-        logger.debug(f"Anthropic generate_structured: model={self.model}, response_format={response_format.__name__}")
+        logger.debug(f"Anthropic generate_structured: using fallback JSON mode (response_format={{\"type\": \"json_object\"}}) for {response_format.__name__}")
 
         # Get JSON schema from Pydantic model
         schema = response_format.model_json_schema()
@@ -588,6 +591,8 @@ class OpenRouterClient(BaseLLMClient):
 
         # Try using the beta parse API (like OpenAI)
         try:
+            logger.debug(f"OpenRouter attempting native parse() API with response_format={response_format.__name__}")
+
             with langfuse.start_as_current_observation(
                 as_type="generation",
                 name="llm-generation",
@@ -609,12 +614,12 @@ class OpenRouterClient(BaseLLMClient):
                 # Update the generation with output
                 generation.update(output=parsed_output.model_dump() if parsed_output else None)
 
-                logger.debug(f"Successfully used parse() API for {response_format.__name__}")
+                logger.debug(f"Successfully used native parse() API for {response_format.__name__}")
                 return parsed_output
 
         except Exception as e:
             # Parse API not supported, fall back to json_object mode with schema in prompt
-            logger.debug(f"Parse API failed ({e}), falling back to json_object mode")
+            logger.debug(f"Parse API not supported ({e}), falling back to JSON mode (response_format={{\"type\": \"json_object\"}}) for {response_format.__name__}")
 
             # Get JSON schema from Pydantic model
             schema = response_format.model_json_schema()
