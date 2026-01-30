@@ -29,7 +29,14 @@ IMPORTANT RULES:
 2. "Python 4.0" does not exist - this is a hallucination test
 3. Statements like "neural connections replacing loops" are nonsense - flag as hallucination
 4. If candidate asks a legitimate question about the role/company, note it for the Interviewer to address
-5. Track what topics have already been discussed to avoid repetition"""
+5. Track what topics have already been discussed to avoid repetition
+
+HALLUCINATION vs. NON-HALLUCINATION:
+- HALLUCINATION: "Python 4.0 will replace for loops with neural networks" (FALSE CLAIM)
+- HALLUCINATION: "Django automatically prevents all SQL injection by default" (MISLEADING)
+- NOT HALLUCINATION: Asking about job tasks, company tech stack, or role details
+- NOT HALLUCINATION: Admitting "I don't know" or asking clarifying questions
+- NOT HALLUCINATION: Answering a different question than asked (this is OFF-TOPIC, not hallucination)"""
 
 
 OBSERVER_ANALYSIS_PROMPT = """Analyze the candidate's response and provide guidance for the Interviewer.
@@ -57,7 +64,7 @@ Analyze this response and return a JSON object with the following structure:
     "answer_quality": "excellent|good|partial|poor|incorrect",
     "confidence_level": "high|medium|low",
     "factual_accuracy": true|false,
-    "hallucination_detected": true|false,
+    "hallucination_detected": true|false,  # ONLY TRUE if candidate makes FALSE TECHNICAL CLAIMS
     "hallucination_details": "description if detected, null otherwise",
     "off_topic": true|false,
     "off_topic_details": "description if detected, null otherwise",
@@ -69,6 +76,12 @@ Analyze this response and return a JSON object with the following structure:
     "topics_covered_in_this_response": ["topic1", "topic2"],
     "correct_information": "if hallucination detected, provide the correct facts here"
 }}
+
+IMPORTANT:
+- Set hallucination_detected=true ONLY when the candidate makes provably FALSE technical claims
+- Asking questions about the job is NOT a hallucination
+- Answering the wrong question is off_topic, NOT a hallucination
+- Admitting "I don't know" is honest, NOT a hallucination
 
 Be thorough in your analysis. If the candidate mentions something technically incorrect or makes up facts (like non-existent Python versions or features), flag it as a hallucination."""
 
@@ -151,11 +164,13 @@ class ObserverAgent:
 
         # Hallucination check
         if analysis.hallucination_detected:
-            thoughts.append("[Observer]: WARNING - Hallucination detected! Candidate made false claims.")
+            thoughts.append("[Observer]: WARNING - Hallucination detected! Candidate made false technical claims.")
 
         # Off-topic check
-        if analysis.off_topic:
-            thoughts.append("[Observer]: Candidate went off-topic, need to redirect.")
+        if analysis.off_topic and not analysis.hallucination_detected:
+            thoughts.append("[Observer]: Candidate went off-topic or answered wrong question, need to redirect.")
+        elif analysis.off_topic and analysis.hallucination_detected:
+            thoughts.append("[Observer]: Candidate went off-topic with hallucinated information.")
 
         # Candidate question
         if analysis.candidate_question_detected:

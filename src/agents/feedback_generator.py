@@ -201,7 +201,9 @@ class FeedbackGeneratorAgent:
             confirmed_skills=confirmed_skills,
             knowledge_gaps=knowledge_gaps,
             soft_skills=soft_skills,
-            roadmap=roadmap_data.get("topics_to_improve", [])
+            topics_to_improve=roadmap_data.get("topics_to_improve", []),
+            recommended_actions=roadmap_data.get("specific_recommendations", []),
+            roadmap=roadmap_data.get("topics_to_improve", [])  # Deprecated
             + roadmap_data.get("specific_recommendations", []),
             resources=roadmap_data.get("resources", []),
         )
@@ -280,9 +282,19 @@ class FeedbackGeneratorAgent:
         # Roadmap section
         lines.append("D. PERSONAL ROADMAP (Next Steps)")
         lines.append("-" * 40)
-        if feedback.roadmap:
-            for i, item in enumerate(feedback.roadmap, 1):
-                lines.append(f"   {i}. {item}")
+
+        # Topics to improve
+        if feedback.topics_to_improve:
+            lines.append("   Topics to Improve:")
+            for topic in feedback.topics_to_improve:
+                lines.append(f"   - {topic}")
+            lines.append("")
+
+        # Recommended actions
+        if feedback.recommended_actions:
+            lines.append("   Recommended Actions:")
+            for i, action in enumerate(feedback.recommended_actions, 1):
+                lines.append(f"   {i}. {action}")
         else:
             lines.append("   No specific recommendations.")
         lines.append("")

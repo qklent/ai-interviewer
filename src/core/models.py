@@ -71,8 +71,10 @@ class FinalFeedback:
     soft_skills: Optional[SoftSkillsAssessment] = None
 
     # Roadmap
-    roadmap: list[str] = field(default_factory=list)
-    resources: list[str] = field(default_factory=list)  # Optional links
+    topics_to_improve: list[str] = field(default_factory=list)
+    recommended_actions: list[str] = field(default_factory=list)
+    resources: list[str] = field(default_factory=list)
+    roadmap: list[str] = field(default_factory=list)  # Deprecated, kept for backward compat
 
 
 @dataclass

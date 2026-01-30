@@ -95,7 +95,8 @@ class InterviewLogger:
             },
             "soft_skills": None,
             "roadmap": {
-                "topics_to_improve": feedback.roadmap,
+                "topics_to_improve": feedback.topics_to_improve,
+                "recommended_actions": feedback.recommended_actions,
                 "resources": feedback.resources,
             },
         }
