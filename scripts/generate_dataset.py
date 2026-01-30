@@ -152,19 +152,29 @@ def upload_to_langfuse(dataset_name: str, test_cases: List[Dict], agent_name: st
         print(f"Note: Dataset may already exist: {e}")
 
     # Upload each test case
+    success_count = 0
     for i, test_case in enumerate(test_cases):
         try:
+            # Transform test case structure for Langfuse
+            # If test case already has "input" key, use it directly
+            if "input" in test_case:
+                input_data = test_case["input"]
+            else:
+                # Otherwise, package all fields except expected_output as input
+                input_data = {k: v for k, v in test_case.items() if k != "expected_output"}
+
             langfuse.create_dataset_item(
                 dataset_name=dataset_name,
-                input=test_case["input"],
-                expected_output=test_case["expected_output"],
+                input=input_data,
+                expected_output=test_case.get("expected_output"),
                 metadata=test_case.get("metadata", {})
             )
+            success_count += 1
             print(f"  ✓ Uploaded test case {i+1}/{len(test_cases)}")
         except Exception as e:
             print(f"  ✗ Error uploading test case {i+1}: {e}")
 
-    print(f"\n✓ Successfully uploaded {len(test_cases)} test cases to Langfuse\n")
+    print(f"\n✓ Successfully uploaded {success_count}/{len(test_cases)} test cases to Langfuse\n")
 
 
 def save_to_file(output_file: str, test_cases: List[Dict]):
