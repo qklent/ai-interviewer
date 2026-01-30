@@ -21,7 +21,7 @@ class ObserverAgent:
         self.llm = llm_client
         self.topics_covered: list[str] = []
 
-    @observe(name="analyze_candidate_response")
+    @observe(name="Observer: Analyze Response", metadata={"agent": "observer"})
     def analyze_response(
         self,
         candidate_info: CandidateInfo,
