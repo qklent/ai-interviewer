@@ -8,10 +8,17 @@ services:
     container_name: interview-coach
     stdin_open: true
     tty: true
+    env_file:
+      - .env
     environment:
       # OpenRouter (recommended)
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - OPENROUTER_MODEL=${OPENROUTER_MODEL:-anthropic/claude-3.5-sonnet}
+
+      # Langfuse (Optional - for tracing and observability)
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-https://cloud.langfuse.com}
 
       # Uncomment to run with example_script.txt automatically
       - USE_EXAMPLE_SCRIPT=true

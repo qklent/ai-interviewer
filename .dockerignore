@@ -42,6 +42,3 @@ docker-compose.yml
 # OS
 .DS_Store
 Thumbs.db
-
-# Test and example files
-example_script.txt
