@@ -12,12 +12,13 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from langfuse import Langfuse, Evaluation
+from pydantic import BaseModel, Field
 from src.core.llm_client import create_llm_client
 from src.agents.observer import ObserverAgent
 from src.agents.interviewer import InterviewerAgent
@@ -25,6 +26,44 @@ from src.agents.feedback_generator import FeedbackGeneratorAgent
 from src.core.models import CandidateInfo, ObserverAnalysis
 from src.utils.prompt_loader import load_prompt
 
+
+# ============================================================================
+# Pydantic Models for Evaluation Scores
+# ============================================================================
+
+class ObserverEvaluationScore(BaseModel):
+    """Evaluation score for ObserverAgent output."""
+    overall_score: float = Field(ge=0.0, le=1.0, description="Overall score from 0.0 to 1.0")
+    quality_assessment_score: float = Field(ge=0.0, le=1.0, description="How well quality was assessed")
+    hallucination_detection_score: float = Field(ge=0.0, le=1.0, description="Accuracy of hallucination detection")
+    recommended_action_score: float = Field(ge=0.0, le=1.0, description="Appropriateness of recommended action")
+    reasoning_quality_score: float = Field(ge=0.0, le=1.0, description="Quality of reasoning provided")
+    comment: str = Field(description="Detailed explanation of the evaluation")
+
+
+class InterviewerEvaluationScore(BaseModel):
+    """Evaluation score for InterviewerAgent output."""
+    overall_score: float = Field(ge=0.0, le=1.0, description="Overall score from 0.0 to 1.0")
+    relevance_score: float = Field(ge=0.0, le=1.0, description="Relevance to context and analysis")
+    difficulty_appropriateness_score: float = Field(ge=0.0, le=1.0, description="Appropriate difficulty level")
+    tone_professionalism_score: float = Field(ge=0.0, le=1.0, description="Professional and encouraging tone")
+    topic_coverage_score: float = Field(ge=0.0, le=1.0, description="Avoids repetition, explores new topics")
+    comment: str = Field(description="Detailed explanation of the evaluation")
+
+
+class FeedbackGeneratorEvaluationScore(BaseModel):
+    """Evaluation score for FeedbackGeneratorAgent output."""
+    overall_score: float = Field(ge=0.0, le=1.0, description="Overall score from 0.0 to 1.0")
+    verdict_accuracy_score: float = Field(ge=0.0, le=1.0, description="Accuracy of hiring verdict")
+    technical_assessment_score: float = Field(ge=0.0, le=1.0, description="Quality of technical skills assessment")
+    soft_skills_assessment_score: float = Field(ge=0.0, le=1.0, description="Quality of soft skills assessment")
+    roadmap_quality_score: float = Field(ge=0.0, le=1.0, description="Usefulness of learning roadmap")
+    comment: str = Field(description="Detailed explanation of the evaluation")
+
+
+# ============================================================================
+# Command Line Parsing
+# ============================================================================
 
 def parse_args():
     """Parse command line arguments."""
@@ -165,14 +204,18 @@ EXPECTED OUTPUT (Correct analysis):
 """
 
         try:
-            # Get evaluation from LLM
-            result = llm_client.generate_json(eval_input)
+            # Get evaluation from LLM using structured output
+            result = llm_client.generate_structured(
+                system_prompt="You are an expert evaluator for ObserverAgent outputs. Provide structured evaluation scores.",
+                user_prompt=eval_input,
+                response_format=ObserverEvaluationScore
+            )
 
             return Evaluation(
                 name="observer_llm_judge",
-                value=result["overall_score"],
-                comment=result["comment"],
-                metadata=result  # Store all individual scores
+                value=result.overall_score,
+                comment=result.comment,
+                metadata=result.model_dump()  # Store all individual scores
             )
         except Exception as e:
             return Evaluation(
@@ -267,13 +310,18 @@ EXPECTED OUTPUT CRITERIA:
 """
 
         try:
-            result = llm_client.generate_json(eval_input)
+            # Get evaluation from LLM using structured output
+            result = llm_client.generate_structured(
+                system_prompt="You are an expert evaluator for InterviewerAgent outputs. Provide structured evaluation scores.",
+                user_prompt=eval_input,
+                response_format=InterviewerEvaluationScore
+            )
 
             return Evaluation(
                 name="interviewer_llm_judge",
-                value=result["overall_score"],
-                comment=result["comment"],
-                metadata=result
+                value=result.overall_score,
+                comment=result.comment,
+                metadata=result.model_dump()
             )
         except Exception as e:
             return Evaluation(
@@ -372,13 +420,18 @@ EXPECTED OUTPUT (Correct feedback):
 """
 
         try:
-            result = llm_client.generate_json(eval_input)
+            # Get evaluation from LLM using structured output
+            result = llm_client.generate_structured(
+                system_prompt="You are an expert evaluator for FeedbackGeneratorAgent outputs. Provide structured evaluation scores.",
+                user_prompt=eval_input,
+                response_format=FeedbackGeneratorEvaluationScore
+            )
 
             return Evaluation(
                 name="feedback_generator_llm_judge",
-                value=result["overall_score"],
-                comment=result["comment"],
-                metadata=result
+                value=result.overall_score,
+                comment=result.comment,
+                metadata=result.model_dump()
             )
         except Exception as e:
             return Evaluation(
