@@ -3,14 +3,17 @@
 import os
 import json
 from abc import ABC, abstractmethod
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING, TypeVar, Type
 from langfuse import get_client
 from src.utils.app_logger import get_logger
+from pydantic import BaseModel
 
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from src.utils.prompt_loader import PromptMetadata
+
+T = TypeVar("T", bound=BaseModel)
 
 
 class BaseLLMClient(ABC):
@@ -53,6 +56,31 @@ class BaseLLMClient(ABC):
             temperature: Sampling temperature
             max_tokens: Maximum tokens to generate
             prompt_metadata: Optional metadata for linking to Langfuse prompts
+        """
+        pass
+
+    @abstractmethod
+    def generate_structured(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        response_format: Type[T],
+        temperature: float = 0.3,
+        max_tokens: int = 2000,
+        prompt_metadata: Optional["PromptMetadata"] = None,
+    ) -> T:
+        """Generate a structured response from the LLM using Pydantic models.
+
+        Args:
+            system_prompt: System prompt text
+            user_prompt: User prompt text
+            response_format: Pydantic model class for structured output
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
+            prompt_metadata: Optional metadata for linking to Langfuse prompts
+
+        Returns:
+            Parsed Pydantic model instance
         """
         pass
 
@@ -160,6 +188,52 @@ class OpenAIClient(BaseLLMClient):
             generation.update(output=result)
 
             return result
+
+    def generate_structured(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        response_format: Type[T],
+        temperature: float = 0.3,
+        max_tokens: int = 2000,
+        prompt_metadata: Optional["PromptMetadata"] = None,
+    ) -> T:
+        langfuse = get_client()
+
+        # Fetch the prompt from Langfuse if metadata is available
+        prompt = None
+        if prompt_metadata:
+            try:
+                prompt = langfuse.get_prompt(
+                    prompt_metadata.name,
+                    version=prompt_metadata.version
+                )
+            except Exception:
+                pass  # Silently fail if prompt not found
+
+        # Create a generation with the prompt linked
+        with langfuse.start_as_current_observation(
+            as_type="generation",
+            name="llm-generation",
+            prompt=prompt
+        ) as generation:
+            response = self.client.beta.chat.completions.parse(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format=response_format,
+            )
+
+            parsed_output = response.choices[0].message.parsed
+
+            # Update the generation with output
+            generation.update(output=parsed_output.model_dump() if parsed_output else None)
+
+            return parsed_output
 
 
 class AnthropicClient(BaseLLMClient):
@@ -299,6 +373,40 @@ class AnthropicClient(BaseLLMClient):
             raise
         except Exception as e:
             logger.exception(f"Anthropic API call failed: {e}")
+            raise
+
+    def generate_structured(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        response_format: Type[T],
+        temperature: float = 0.3,
+        max_tokens: int = 2000,
+        prompt_metadata: Optional["PromptMetadata"] = None,
+    ) -> T:
+        """Generate structured output for Anthropic.
+
+        Since Anthropic doesn't have native structured outputs like OpenAI,
+        we use generate_json and parse it into the Pydantic model.
+        """
+        logger.debug(f"Anthropic generate_structured: model={self.model}, response_format={response_format.__name__}")
+
+        # Use generate_json and then validate with Pydantic
+        json_result = self.generate_json(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            prompt_metadata=prompt_metadata,
+        )
+
+        # Parse JSON into Pydantic model
+        try:
+            parsed_output = response_format.model_validate(json_result)
+            logger.debug(f"Successfully parsed response into {response_format.__name__}")
+            return parsed_output
+        except Exception as e:
+            logger.exception(f"Failed to parse response into {response_format.__name__}: {e}")
             raise
 
 
@@ -457,6 +565,41 @@ class OpenRouterClient(BaseLLMClient):
             raise
         except Exception as e:
             logger.exception(f"OpenRouter API call failed: {e}")
+            raise
+
+    def generate_structured(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        response_format: Type[T],
+        temperature: float = 0.3,
+        max_tokens: int = 2000,
+        prompt_metadata: Optional["PromptMetadata"] = None,
+    ) -> T:
+        """Generate structured output for OpenRouter.
+
+        OpenRouter supports OpenAI-compatible interface, but may not support
+        beta.chat.completions.parse. Fall back to generate_json + validation.
+        """
+        logger.debug(f"OpenRouter generate_structured: model={self.model}, response_format={response_format.__name__}")
+
+        # Use generate_json and then validate with Pydantic
+        # This is more reliable for OpenRouter than assuming parse() support
+        json_result = self.generate_json(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            prompt_metadata=prompt_metadata,
+        )
+
+        # Parse JSON into Pydantic model
+        try:
+            parsed_output = response_format.model_validate(json_result)
+            logger.debug(f"Successfully parsed response into {response_format.__name__}")
+            return parsed_output
+        except Exception as e:
+            logger.exception(f"Failed to parse response into {response_format.__name__}: {e}")
             raise
 
 

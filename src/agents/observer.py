@@ -5,6 +5,7 @@ from typing import Optional
 from langfuse import observe, get_client
 from src.core.llm_client import BaseLLMClient
 from src.core.models import ObserverAnalysis, CandidateInfo, Grade
+from src.core.schemas import ObserverAnalysisSchema
 from src.utils.prompt_loader import load_prompt
 from src.utils.tracing import is_tracing_enabled
 
@@ -56,33 +57,33 @@ class ObserverAgent:
             topics_covered=topics_text,
         )
 
-        response = self.llm.generate_json(
+        # Use structured outputs with Pydantic schema
+        response = self.llm.generate_structured(
             system_prompt=OBSERVER_SYSTEM_PROMPT,
             user_prompt=prompt,
+            response_format=ObserverAnalysisSchema,
             temperature=0.3,
             prompt_metadata=OBSERVER_SYSTEM_METADATA,
         )
 
         # Update topics covered
-        new_topics = response.get("topics_covered_in_this_response", [])
+        new_topics = response.topics_covered_in_this_response
         for topic in new_topics:
             if topic not in self.topics_covered:
                 self.topics_covered.append(topic)
 
-        # Build analysis object
+        # Build analysis object from structured response
         analysis = ObserverAnalysis(
-            answer_quality=response.get("answer_quality", "partial"),
-            confidence_level=response.get("confidence_level", "medium"),
-            factual_accuracy=response.get("factual_accuracy", True),
-            hallucination_detected=response.get("hallucination_detected", False),
-            off_topic=response.get("off_topic", False),
-            candidate_question_detected=response.get(
-                "candidate_question_detected", False
-            ),
-            candidate_question=response.get("candidate_question"),
-            key_observations=response.get("key_observations", []),
-            recommended_action=response.get("recommended_action", ""),
-            difficulty_adjustment=response.get("difficulty_adjustment", "maintain"),
+            answer_quality=response.answer_quality,
+            confidence_level=response.confidence_level,
+            factual_accuracy=response.factual_accuracy,
+            hallucination_detected=response.hallucination_detected,
+            off_topic=response.off_topic,
+            candidate_question_detected=response.candidate_question_detected,
+            candidate_question=response.candidate_question,
+            key_observations=response.key_observations,
+            recommended_action=response.recommended_action,
+            difficulty_adjustment=response.difficulty_adjustment,
             topics_covered=self.topics_covered.copy(),
         )
 

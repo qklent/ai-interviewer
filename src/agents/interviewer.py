@@ -10,6 +10,11 @@ from src.core.models import (
     CandidateInfo,
     Grade,
 )
+from src.core.schemas import (
+    InterviewerGreetingSchema,
+    InterviewerResponseSchema,
+    InterviewerFirstQuestionSchema,
+)
 from src.utils.prompt_loader import load_prompt
 
 
@@ -41,17 +46,16 @@ class InterviewerAgent:
             experience=candidate_info.experience,
         )
 
-        response = self.llm.generate_json(
+        # Use structured outputs with Pydantic schema
+        response = self.llm.generate_structured(
             system_prompt=INTERVIEWER_SYSTEM_PROMPT,
             user_prompt=prompt,
+            response_format=InterviewerGreetingSchema,
             temperature=0.7,
             prompt_metadata=INTERVIEWER_SYSTEM_METADATA,
         )
 
-        greeting = response.get("greeting", "Hello! Please tell me about yourself.")
-        rationale = response.get("rationale", "Standard greeting")
-
-        return greeting, f"[Interviewer]: {rationale}"
+        return response.greeting, f"[Interviewer]: {response.rationale}"
 
     @observe(name="Interviewer: Generate Response")
     def generate_response(
@@ -110,40 +114,37 @@ class InterviewerAgent:
             topics_covered=topics_text,
         )
 
-        response = self.llm.generate_json(
+        # Use structured outputs with Pydantic schema
+        response = self.llm.generate_structured(
             system_prompt=INTERVIEWER_SYSTEM_PROMPT,
             user_prompt=prompt,
+            response_format=InterviewerResponseSchema,
             temperature=0.7,
             prompt_metadata=INTERVIEWER_SYSTEM_METADATA,
         )
 
-        message = response.get("response", "Let's continue with the next question.")
-        rationale = response.get("rationale", "Continuing interview")
-        topic = response.get("topic", "general")
-        difficulty = response.get("question_difficulty", "medium")
-
         # Update internal state
-        self.current_difficulty = difficulty
-        if response.get("next_question"):
-            self.questions_asked.append(response["next_question"])
+        self.current_difficulty = response.question_difficulty
+        if response.next_question:
+            self.questions_asked.append(response.next_question)
 
         # Build internal thoughts string
-        internal_parts = [f"[Interviewer]: {rationale}"]
-        if response.get("addressed_candidate_question"):
+        internal_parts = [f"[Interviewer]: {response.rationale}"]
+        if response.addressed_candidate_question:
             internal_parts.append(
                 "[Interviewer]: Addressed candidate's question before continuing."
             )
-        if response.get("corrected_misinformation"):
+        if response.corrected_misinformation:
             internal_parts.append(
                 "[Interviewer]: Corrected factual error in candidate's response."
             )
         internal_parts.append(
-            f"[Interviewer]: Topic: {topic}, Difficulty: {difficulty}"
+            f"[Interviewer]: Topic: {response.topic}, Difficulty: {response.question_difficulty}"
         )
 
         internal_thoughts = " | ".join(internal_parts)
 
-        return message, internal_thoughts
+        return response.response, internal_thoughts
 
     @observe(name="Interviewer: Generate First Question")
     def generate_first_question(
@@ -171,40 +172,26 @@ Generate a question that:
 1. Is appropriate for their stated experience level
 2. Relates to technologies they mentioned (if any)
 3. Starts with fundamentals before going deeper
-4. Is clear and specific
+4. Is clear and specific"""
 
-Return a JSON object:
-{{
-    "response": "your acknowledgment of their intro + the question",
-    "question": "just the technical question part",
-    "topic": "topic of the question",
-    "difficulty": "easy|medium|hard",
-    "rationale": "why you chose this question"
-}}"""
-
-        response = self.llm.generate_json(
+        # Use structured outputs with Pydantic schema
+        response = self.llm.generate_structured(
             system_prompt=INTERVIEWER_SYSTEM_PROMPT,
             user_prompt=prompt,
+            response_format=InterviewerFirstQuestionSchema,
             temperature=0.7,
             prompt_metadata=INTERVIEWER_SYSTEM_METADATA,
         )
 
-        message = response.get(
-            "response", "Great! Let me ask you a technical question."
-        )
-        rationale = response.get("rationale", "Starting with basics")
-        topic = response.get("topic", "fundamentals")
-        difficulty = response.get("difficulty", "easy")
-
-        self.current_difficulty = difficulty
-        if response.get("question"):
-            self.questions_asked.append(response["question"])
+        self.current_difficulty = response.difficulty
+        if response.question:
+            self.questions_asked.append(response.question)
 
         internal = (
-            f"[Interviewer]: {rationale} | Topic: {topic}, Difficulty: {difficulty}"
+            f"[Interviewer]: {response.rationale} | Topic: {response.topic}, Difficulty: {response.difficulty}"
         )
 
-        return message, internal
+        return response.response, internal
 
     def get_current_difficulty(self) -> str:
         """Get the current question difficulty level."""

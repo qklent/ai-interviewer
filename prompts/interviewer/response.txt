@@ -36,13 +36,11 @@ Generate your response following these guidelines:
 6. Do NOT ask about topics already covered
 7. Keep response natural and conversational
 
-Return a JSON object:
-{{
-    "response": "your complete response to show the candidate",
-    "next_question": "the technical question in your response (if any)",
-    "question_difficulty": "easy|medium|hard",
-    "topic": "topic of the question",
-    "rationale": "internal reasoning (not shown to candidate)",
-    "addressed_candidate_question": true|false,
-    "corrected_misinformation": true|false
-}}
+Provide:
+- Your complete response to show the candidate
+- The technical question in your response (if any)
+- Question difficulty level (easy, medium, or hard)
+- Topic of the question
+- Internal reasoning (not shown to candidate)
+- Whether you addressed the candidate's question
+- Whether you corrected misinformation

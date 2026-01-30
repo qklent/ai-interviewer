@@ -12,6 +12,7 @@ from src.core.models import (
     Grade,
     HiringRecommendation,
 )
+from src.core.schemas import FeedbackSchema
 from src.utils.prompt_loader import load_prompt
 
 
@@ -54,19 +55,15 @@ class FeedbackGeneratorAgent:
             transcript=transcript,
         )
 
-        response = self.llm.generate_json(
+        # Use structured outputs with Pydantic schema
+        response = self.llm.generate_structured(
             system_prompt=FEEDBACK_SYSTEM_PROMPT,
             user_prompt=prompt,
+            response_format=FeedbackSchema,
             temperature=0.3,
             max_tokens=3000,
             prompt_metadata=FEEDBACK_SYSTEM_METADATA,
         )
-
-        # Parse the response into FinalFeedback object
-        verdict = response.get("verdict", {})
-        tech_review = response.get("technical_review", {})
-        soft_skills_data = response.get("soft_skills", {})
-        roadmap_data = response.get("roadmap", {})
 
         # Map grade string to enum
         grade_map = {
@@ -75,7 +72,7 @@ class FeedbackGeneratorAgent:
             "Senior": Grade.SENIOR,
         }
         assessed_grade = grade_map.get(
-            verdict.get("assessed_grade", "Junior"), Grade.JUNIOR
+            response.verdict.assessed_grade, Grade.JUNIOR
         )
 
         # Map hiring recommendation to enum
@@ -85,58 +82,53 @@ class FeedbackGeneratorAgent:
             "Strong Hire": HiringRecommendation.STRONG_HIRE,
         }
         hiring_rec = hire_map.get(
-            verdict.get("hiring_recommendation", "No Hire"),
+            response.verdict.hiring_recommendation,
             HiringRecommendation.NO_HIRE,
         )
 
-        # Build confirmed skills
+        # Build confirmed skills from structured response
         confirmed_skills = [
             SkillAssessment(
-                topic=skill.get("topic", "Unknown"),
+                topic=skill.topic,
                 status="confirmed",
-                details=skill.get("details", ""),
+                details=skill.details,
             )
-            for skill in tech_review.get("confirmed_skills", [])
+            for skill in response.technical_review.confirmed_skills
         ]
 
-        # Build knowledge gaps
+        # Build knowledge gaps from structured response
         knowledge_gaps = [
             SkillAssessment(
-                topic=gap.get("topic", "Unknown"),
+                topic=gap.topic,
                 status="gap",
-                details=gap.get("details", ""),
-                correct_answer=gap.get("correct_answer"),
+                details=gap.details,
+                correct_answer=gap.correct_answer,
             )
-            for gap in tech_review.get("knowledge_gaps", [])
+            for gap in response.technical_review.knowledge_gaps
         ]
 
-        # Build soft skills assessment
-        clarity_data = soft_skills_data.get("clarity", {})
-        honesty_data = soft_skills_data.get("honesty", {})
-        engagement_data = soft_skills_data.get("engagement", {})
-
+        # Build soft skills assessment from structured response
         soft_skills = SoftSkillsAssessment(
-            clarity=clarity_data.get("score", 5),
-            clarity_notes=clarity_data.get("notes", ""),
-            honesty=honesty_data.get("score", 5),
-            honesty_notes=honesty_data.get("notes", ""),
-            engagement=engagement_data.get("score", 5),
-            engagement_notes=engagement_data.get("notes", ""),
+            clarity=response.soft_skills.clarity.score,
+            clarity_notes=response.soft_skills.clarity.notes,
+            honesty=response.soft_skills.honesty.score,
+            honesty_notes=response.soft_skills.honesty.notes,
+            engagement=response.soft_skills.engagement.score,
+            engagement_notes=response.soft_skills.engagement.notes,
         )
 
         # Build final feedback object
         feedback = FinalFeedback(
             assessed_grade=assessed_grade,
             hiring_recommendation=hiring_rec,
-            confidence_score=verdict.get("confidence_score", 50),
+            confidence_score=response.verdict.confidence_score,
             confirmed_skills=confirmed_skills,
             knowledge_gaps=knowledge_gaps,
             soft_skills=soft_skills,
-            topics_to_improve=roadmap_data.get("topics_to_improve", []),
-            recommended_actions=roadmap_data.get("specific_recommendations", []),
-            roadmap=roadmap_data.get("topics_to_improve", [])  # Deprecated
-            + roadmap_data.get("specific_recommendations", []),
-            resources=roadmap_data.get("resources", []),
+            topics_to_improve=response.roadmap.topics_to_improve,
+            recommended_actions=response.roadmap.specific_recommendations,
+            roadmap=response.roadmap.topics_to_improve + response.roadmap.specific_recommendations,  # Deprecated
+            resources=response.roadmap.resources,
         )
 
         # Format for display
@@ -145,7 +137,7 @@ class FeedbackGeneratorAgent:
         return feedback, formatted
 
     def _format_feedback_for_display(
-        self, feedback: FinalFeedback, raw_response: dict
+        self, feedback: FinalFeedback, response: FeedbackSchema
     ) -> str:
         """Format the feedback for human-readable display."""
         lines = []
@@ -163,9 +155,9 @@ class FeedbackGeneratorAgent:
         )
         lines.append(f"   Confidence Score: {feedback.confidence_score}%")
 
-        verdict = raw_response.get("verdict", {})
-        if verdict.get("summary"):
-            lines.append(f"   Summary: {verdict['summary']}")
+        # Get summary from structured response
+        if response.verdict.summary:
+            lines.append(f"   Summary: {response.verdict.summary}")
         lines.append("")
 
         # Technical Review section
@@ -230,18 +222,17 @@ class FeedbackGeneratorAgent:
                 lines.append(f"   - {resource}")
         lines.append("")
 
-        # Notable moments
-        notable = raw_response.get("notable_moments", {})
-        if notable.get("strengths") or notable.get("concerns"):
+        # Notable moments from structured response
+        if response.notable_moments.strengths or response.notable_moments.concerns:
             lines.append("E. NOTABLE MOMENTS")
             lines.append("-" * 40)
-            if notable.get("strengths"):
+            if response.notable_moments.strengths:
                 lines.append("   Strengths:")
-                for s in notable["strengths"]:
+                for s in response.notable_moments.strengths:
                     lines.append(f"   [+] {s}")
-            if notable.get("concerns"):
+            if response.notable_moments.concerns:
                 lines.append("   Concerns:")
-                for c in notable["concerns"]:
+                for c in response.notable_moments.concerns:
                     lines.append(f"   [-] {c}")
             lines.append("")
 
