@@ -20,6 +20,19 @@ services:
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
       - LANGFUSE_HOST=${LANGFUSE_HOST:-https://cloud.langfuse.com}
 
+      # Feedback Generation Mode
+      - FEEDBACK_MODE=${FEEDBACK_MODE:-single_model}
+
+      # Multi-Model Feedback Configuration (used when FEEDBACK_MODE=multi_model)
+      - FEEDBACK_MODEL_GOOGLE=${FEEDBACK_MODEL_GOOGLE:-google/gemini-2.0-flash-thinking-exp-1219}
+      - FEEDBACK_MODEL_ANTHROPIC=${FEEDBACK_MODEL_ANTHROPIC:-anthropic/claude-3.5-sonnet}
+      - FEEDBACK_MODEL_OPENAI=${FEEDBACK_MODEL_OPENAI:-openai/gpt-4o}
+      - SAVE_INTERMEDIATE_FEEDBACK=${SAVE_INTERMEDIATE_FEEDBACK:-true}
+      - MULTIMODEL_FALLBACK_MODE=${MULTIMODEL_FALLBACK_MODE:-partial}
+
+      # LLM Retry Configuration
+      - MAX_LLM_RETRIES=${MAX_LLM_RETRIES:-3}
+
       # Uncomment to run with example_script.txt automatically
       - USE_EXAMPLE_SCRIPT=true
     volumes:
