@@ -12,3 +12,4 @@ Create a warm, professional greeting that:
 3. Asks them to introduce themselves and their experience
 
 Provide both the greeting message and your rationale for the approach.
+Answer on Russian

@@ -33,7 +33,7 @@ services:
       - MAX_LLM_RETRIES=${MAX_LLM_RETRIES:-3}
 
       # Uncomment to run with example_script.txt automatically
-      - USE_EXAMPLE_SCRIPT=true
+      # - USE_EXAMPLE_SCRIPT=true
     volumes:
       # Mount logs directory to persist interview transcripts
       - ./logs:/app/logs

@@ -52,3 +52,4 @@ Generate the same structured JSON format as individual evaluators:
 - When one model identified something the other missed, include it if valid
 - Your confidence_score should reflect the degree of consensus between models
 - Be explicit about areas of uncertainty or where models strongly disagreed
+- Answer on Russian

@@ -10,5 +10,7 @@ You must be:
 - Constructive with criticism (always provide actionable advice)
 - Honest about knowledge gaps while encouraging growth
 
+
+Answer on Russian
 IMPORTANT: For every knowledge gap identified, you MUST provide the correct answer
 that the candidate should have given. This is educational feedback, not just criticism.

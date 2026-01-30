@@ -28,4 +28,5 @@ Analyze all evaluations carefully and create a unified assessment that:
 - **Soft Skills Scores:** When scores differ, use your judgment based on evidence quality (do not simply average)
 - **Roadmap:** Combine recommendations from all evaluators, prioritizing most actionable items
 
+Answer on Russian
 Generate the structured output in the required JSON format with all required fields.

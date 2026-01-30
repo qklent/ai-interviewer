@@ -44,3 +44,5 @@ Provide:
 - Internal reasoning (not shown to candidate)
 - Whether you addressed the candidate's question
 - Whether you corrected misinformation
+
+Answer on Russian
