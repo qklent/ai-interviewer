@@ -75,16 +75,20 @@ class InterviewOrchestrator:
         # Track session metadata in Langfuse
         if is_tracing_enabled():
             langfuse = get_client()
+            # Update trace-level attributes
+            langfuse.update_current_trace(
+                user_id=name,
+                tags=["interview", grade, position],
+            )
+            # Update span-level attributes
             langfuse.update_current_span(
                 name=f"Interview: {name}",
-                user_id=name,
                 metadata={
                     "position": position,
                     "target_grade": grade,
                     "experience": experience,
                     "mode": "interactive",
                 },
-                tags=["interview", grade, position],
             )
 
         # Parse grade
