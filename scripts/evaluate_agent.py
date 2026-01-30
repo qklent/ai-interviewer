@@ -357,15 +357,15 @@ def evaluate_observer_agent(
         covered_topics=covered_topics,
     )
 
-    # Convert to dict for evaluation
+    # Convert to dict for evaluation (map actual model fields to dataset format)
     return {
-        "quality": analysis.quality,
-        "confidence": analysis.confidence,
-        "has_hallucination": analysis.has_hallucination,
-        "hallucination_details": analysis.hallucination_details,
+        "quality": analysis.answer_quality,
+        "confidence": analysis.confidence_level,
+        "has_hallucination": analysis.hallucination_detected,
+        "hallucination_details": ", ".join(analysis.key_observations) if analysis.key_observations else None,
         "recommended_action": analysis.recommended_action,
-        "reasoning": analysis.reasoning,
-        "covered_topics": analysis.covered_topics,
+        "reasoning": ", ".join(analysis.key_observations) if analysis.key_observations else "",
+        "covered_topics": analysis.topics_covered,
     }
 
 
@@ -436,7 +436,7 @@ def evaluate_interviewer_agent(
         name="Test Candidate",
         position=item["input"]["position"],
         target_grade=item["input"]["grade"],
-        years_of_experience="N/A",
+        experience="N/A",
     )
 
     interviewer = InterviewerAgent(llm_client, candidate_info)
@@ -453,14 +453,18 @@ def evaluate_interviewer_agent(
     covered_topics = item["input"]["covered_topics"]
 
     # Convert observer_analysis dict to ObserverAnalysis object
+    # Map from dataset format to actual ObserverAnalysis model
     observer_analysis = ObserverAnalysis(
-        quality=observer_analysis_data["quality"],
-        confidence=observer_analysis_data["confidence"],
-        has_hallucination=observer_analysis_data.get("has_hallucination", False),
-        hallucination_details=observer_analysis_data.get("hallucination_details"),
-        recommended_action=observer_analysis_data["recommended_action"],
-        reasoning=observer_analysis_data["reasoning"],
-        covered_topics=observer_analysis_data.get("covered_topics", []),
+        answer_quality=observer_analysis_data.get("quality", "good"),
+        confidence_level=observer_analysis_data.get("confidence", "medium"),
+        factual_accuracy=not observer_analysis_data.get("has_hallucination", False),
+        hallucination_detected=observer_analysis_data.get("has_hallucination", False),
+        off_topic=observer_analysis_data.get("quality") == "off_topic",
+        candidate_question_detected=False,
+        recommended_action=observer_analysis_data.get("recommended_action", "continue"),
+        difficulty_adjustment="maintain",
+        topics_covered=observer_analysis_data.get("covered_topics", []),
+        key_observations=[observer_analysis_data.get("reasoning", "")],
     )
 
     # Generate response
@@ -546,7 +550,7 @@ def evaluate_feedback_generator_agent(
         name="Test Candidate",
         position=item["input"]["position"],
         target_grade=item["input"]["target_grade"],
-        years_of_experience="N/A",
+        experience="N/A",
     )
 
     feedback_gen = FeedbackGeneratorAgent(llm_client, candidate_info)
@@ -560,18 +564,21 @@ def evaluate_feedback_generator_agent(
     # Extract input
     conversation_history = item["input"]["conversation_history"]
 
-    # Convert observer analyses to ObserverAnalysis objects
+    # Convert observer analyses to ObserverAnalysis objects with proper field mapping
     observer_analyses = []
     for analysis_data in item["input"]["observer_analyses"]:
         observer_analyses.append(
             ObserverAnalysis(
-                quality=analysis_data["quality"],
-                confidence=analysis_data["confidence"],
-                has_hallucination=analysis_data.get("has_hallucination", False),
-                hallucination_details=analysis_data.get("hallucination_details"),
-                recommended_action=analysis_data["recommended_action"],
-                reasoning=analysis_data["reasoning"],
-                covered_topics=analysis_data.get("covered_topics", []),
+                answer_quality=analysis_data.get("quality", "good"),
+                confidence_level=analysis_data.get("confidence", "medium"),
+                factual_accuracy=not analysis_data.get("has_hallucination", False),
+                hallucination_detected=analysis_data.get("has_hallucination", False),
+                off_topic=analysis_data.get("quality") == "off_topic",
+                candidate_question_detected=False,
+                recommended_action=analysis_data.get("recommended_action", "continue"),
+                difficulty_adjustment="maintain",
+                topics_covered=analysis_data.get("covered_topics", []),
+                key_observations=[analysis_data.get("reasoning", "")],
             )
         )
 
@@ -580,16 +587,23 @@ def evaluate_feedback_generator_agent(
         conversation_history=conversation_history, observer_analyses=observer_analyses
     )
 
-    # Convert to dict
+    # Convert to dict (map actual model fields to dataset format)
     return {
-        "verdict": feedback.verdict,
-        "assessed_grade": feedback.assessed_grade,
-        "grade_reasoning": feedback.grade_reasoning,
-        "confirmed_skills": feedback.confirmed_skills,
-        "knowledge_gaps": feedback.knowledge_gaps,
-        "concerning_patterns": feedback.concerning_patterns,
-        "soft_skills": feedback.soft_skills,
-        "learning_roadmap": feedback.learning_roadmap,
+        "verdict": feedback.hiring_recommendation.value if hasattr(feedback.hiring_recommendation, 'value') else str(feedback.hiring_recommendation),
+        "assessed_grade": feedback.assessed_grade.value if hasattr(feedback.assessed_grade, 'value') else str(feedback.assessed_grade),
+        "grade_reasoning": f"Confidence: {feedback.confidence_score}%",
+        "confirmed_skills": [{"topic": s.topic, "status": s.status, "details": s.details} for s in feedback.confirmed_skills],
+        "knowledge_gaps": [{"topic": s.topic, "status": s.status, "details": s.details} for s in feedback.knowledge_gaps],
+        "concerning_patterns": [],  # Not in new model
+        "soft_skills": {
+            "clarity": feedback.soft_skills.clarity if feedback.soft_skills else 5,
+            "clarity_notes": feedback.soft_skills.clarity_notes if feedback.soft_skills else "",
+            "honesty": feedback.soft_skills.honesty if feedback.soft_skills else 5,
+            "honesty_notes": feedback.soft_skills.honesty_notes if feedback.soft_skills else "",
+            "engagement": feedback.soft_skills.engagement if feedback.soft_skills else 5,
+            "engagement_notes": feedback.soft_skills.engagement_notes if feedback.soft_skills else "",
+        },
+        "learning_roadmap": feedback.roadmap if feedback.roadmap else feedback.topics_to_improve,
     }
 
 
