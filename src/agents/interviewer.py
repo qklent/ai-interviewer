@@ -1,7 +1,8 @@
 """Interviewer Agent - conducts the technical interview."""
+
 from typing import Optional
 
-from langfuse.decorators import observe
+from langfuse import observe
 from src.core.llm_client import BaseLLMClient
 from src.core.models import (
     InterviewerDecision,
@@ -75,10 +76,18 @@ class InterviewerAgent:
             history_text = "This is the beginning of the interview."
 
         # Format topics covered
-        topics_text = ", ".join(observer_analysis.topics_covered) if observer_analysis.topics_covered else "None yet"
+        topics_text = (
+            ", ".join(observer_analysis.topics_covered)
+            if observer_analysis.topics_covered
+            else "None yet"
+        )
 
         # Format observations
-        observations_text = "; ".join(observer_analysis.key_observations) if observer_analysis.key_observations else "No specific observations"
+        observations_text = (
+            "; ".join(observer_analysis.key_observations)
+            if observer_analysis.key_observations
+            else "No specific observations"
+        )
 
         prompt = INTERVIEWER_RESPONSE_PROMPT.format(
             name=candidate_info.name,
@@ -119,10 +128,16 @@ class InterviewerAgent:
         # Build internal thoughts string
         internal_parts = [f"[Interviewer]: {rationale}"]
         if response.get("addressed_candidate_question"):
-            internal_parts.append("[Interviewer]: Addressed candidate's question before continuing.")
+            internal_parts.append(
+                "[Interviewer]: Addressed candidate's question before continuing."
+            )
         if response.get("corrected_misinformation"):
-            internal_parts.append("[Interviewer]: Corrected factual error in candidate's response.")
-        internal_parts.append(f"[Interviewer]: Topic: {topic}, Difficulty: {difficulty}")
+            internal_parts.append(
+                "[Interviewer]: Corrected factual error in candidate's response."
+            )
+        internal_parts.append(
+            f"[Interviewer]: Topic: {topic}, Difficulty: {difficulty}"
+        )
 
         internal_thoughts = " | ".join(internal_parts)
 
@@ -171,7 +186,9 @@ Return a JSON object:
             temperature=0.7,
         )
 
-        message = response.get("response", "Great! Let me ask you a technical question.")
+        message = response.get(
+            "response", "Great! Let me ask you a technical question."
+        )
         rationale = response.get("rationale", "Starting with basics")
         topic = response.get("topic", "fundamentals")
         difficulty = response.get("difficulty", "easy")
@@ -180,7 +197,9 @@ Return a JSON object:
         if response.get("question"):
             self.questions_asked.append(response["question"])
 
-        internal = f"[Interviewer]: {rationale} | Topic: {topic}, Difficulty: {difficulty}"
+        internal = (
+            f"[Interviewer]: {rationale} | Topic: {topic}, Difficulty: {difficulty}"
+        )
 
         return message, internal
 

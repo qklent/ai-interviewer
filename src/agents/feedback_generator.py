@@ -1,7 +1,8 @@
 """Feedback Generator Agent - creates comprehensive final feedback."""
+
 from typing import Optional
 
-from langfuse.decorators import observe
+from langfuse import observe
 from src.core.llm_client import BaseLLMClient
 from src.core.models import (
     FinalFeedback,
@@ -194,17 +195,11 @@ class FeedbackGeneratorAgent:
         lines.append("C. SOFT SKILLS & COMMUNICATION")
         lines.append("-" * 40)
         if feedback.soft_skills:
-            lines.append(
-                f"   Clarity: {feedback.soft_skills.clarity}/10"
-            )
+            lines.append(f"   Clarity: {feedback.soft_skills.clarity}/10")
             lines.append(f"       {feedback.soft_skills.clarity_notes}")
-            lines.append(
-                f"   Honesty: {feedback.soft_skills.honesty}/10"
-            )
+            lines.append(f"   Honesty: {feedback.soft_skills.honesty}/10")
             lines.append(f"       {feedback.soft_skills.honesty_notes}")
-            lines.append(
-                f"   Engagement: {feedback.soft_skills.engagement}/10"
-            )
+            lines.append(f"   Engagement: {feedback.soft_skills.engagement}/10")
             lines.append(f"       {feedback.soft_skills.engagement_notes}")
         lines.append("")
 

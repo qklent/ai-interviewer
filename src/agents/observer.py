@@ -1,7 +1,8 @@
 """Observer Agent - analyzes candidate responses and guides the Interviewer."""
+
 from typing import Optional
 
-from langfuse.decorators import observe, langfuse_context
+from langfuse import observe, langfuse_context
 from src.core.llm_client import BaseLLMClient
 from src.core.models import ObserverAnalysis, CandidateInfo, Grade
 from src.utils.prompt_loader import load_prompt
@@ -39,7 +40,9 @@ class ObserverAgent:
             history_text = "This is the first turn of the interview."
 
         # Format topics covered
-        topics_text = ", ".join(self.topics_covered) if self.topics_covered else "None yet"
+        topics_text = (
+            ", ".join(self.topics_covered) if self.topics_covered else "None yet"
+        )
 
         prompt = OBSERVER_ANALYSIS_PROMPT.format(
             name=candidate_info.name,
@@ -71,7 +74,9 @@ class ObserverAgent:
             factual_accuracy=response.get("factual_accuracy", True),
             hallucination_detected=response.get("hallucination_detected", False),
             off_topic=response.get("off_topic", False),
-            candidate_question_detected=response.get("candidate_question_detected", False),
+            candidate_question_detected=response.get(
+                "candidate_question_detected", False
+            ),
             candidate_question=response.get("candidate_question"),
             key_observations=response.get("key_observations", []),
             recommended_action=response.get("recommended_action", ""),
@@ -87,7 +92,7 @@ class ObserverAgent:
                     "hallucination": analysis.hallucination_detected,
                     "recommended_action": analysis.recommended_action,
                     "difficulty_adjustment": analysis.difficulty_adjustment,
-                    "off_topic": analysis.off_topic
+                    "off_topic": analysis.off_topic,
                 }
             )
 
@@ -103,17 +108,25 @@ class ObserverAgent:
 
         # Hallucination check
         if analysis.hallucination_detected:
-            thoughts.append("[Observer]: WARNING - Hallucination detected! Candidate made false technical claims.")
+            thoughts.append(
+                "[Observer]: WARNING - Hallucination detected! Candidate made false technical claims."
+            )
 
         # Off-topic check
         if analysis.off_topic and not analysis.hallucination_detected:
-            thoughts.append("[Observer]: Candidate went off-topic or answered wrong question, need to redirect.")
+            thoughts.append(
+                "[Observer]: Candidate went off-topic or answered wrong question, need to redirect."
+            )
         elif analysis.off_topic and analysis.hallucination_detected:
-            thoughts.append("[Observer]: Candidate went off-topic with hallucinated information.")
+            thoughts.append(
+                "[Observer]: Candidate went off-topic with hallucinated information."
+            )
 
         # Candidate question
         if analysis.candidate_question_detected:
-            thoughts.append(f"[Observer]: Candidate asked a question: '{analysis.candidate_question}' - Interviewer should address it.")
+            thoughts.append(
+                f"[Observer]: Candidate asked a question: '{analysis.candidate_question}' - Interviewer should address it."
+            )
 
         # Key observations
         for obs in analysis.key_observations:
@@ -124,7 +137,9 @@ class ObserverAgent:
 
         # Difficulty adjustment
         if analysis.difficulty_adjustment != "maintain":
-            thoughts.append(f"[Observer]: Recommend to {analysis.difficulty_adjustment} question difficulty.")
+            thoughts.append(
+                f"[Observer]: Recommend to {analysis.difficulty_adjustment} question difficulty."
+            )
 
         return " | ".join(thoughts)
 

@@ -1,8 +1,9 @@
 """Interview Orchestrator - coordinates agents and manages interview flow."""
+
 import re
 from typing import Optional
 
-from langfuse.decorators import observe, langfuse_context
+from langfuse import observe, langfuse_context
 from src.core.llm_client import BaseLLMClient, get_llm_client
 from src.core.models import CandidateInfo, Grade, FinalFeedback
 from src.agents.interviewer import InterviewerAgent
@@ -80,9 +81,9 @@ class InterviewOrchestrator:
                     "position": position,
                     "target_grade": grade,
                     "experience": experience,
-                    "mode": "interactive"
+                    "mode": "interactive",
                 },
-                tags=["interview", grade, position]
+                tags=["interview", grade, position],
             )
 
         # Parse grade
@@ -173,7 +174,9 @@ class InterviewOrchestrator:
                 self.current_question,
                 user_message,
             )
-            observer_thoughts = self.observer.format_internal_thoughts(observer_analysis)
+            observer_thoughts = self.observer.format_internal_thoughts(
+                observer_analysis
+            )
 
             # Combine internal thoughts
             internal_thoughts = f"{observer_thoughts} | {interviewer_thoughts}"
@@ -256,15 +259,19 @@ class InterviewOrchestrator:
             langfuse_context.update_current_observation(
                 output={
                     "verdict": feedback.verdict,
-                    "grade": feedback.grade.value if hasattr(feedback.grade, 'value') else str(feedback.grade),
+                    "grade": feedback.grade.value
+                    if hasattr(feedback.grade, "value")
+                    else str(feedback.grade),
                     "total_turns": self.turn_count,
-                    "hiring_recommendation": feedback.hiring_recommendation
+                    "hiring_recommendation": feedback.hiring_recommendation,
                 },
                 metadata={
                     "confirmed_skills": feedback.confirmed_skills,
                     "skill_gaps": feedback.skill_gaps,
-                    "topics_covered": feedback.topics_covered if hasattr(feedback, 'topics_covered') else []
-                }
+                    "topics_covered": feedback.topics_covered
+                    if hasattr(feedback, "topics_covered")
+                    else [],
+                },
             )
 
         # Save the log

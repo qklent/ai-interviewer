@@ -22,8 +22,11 @@ COPY . .
 # Create logs directory
 RUN mkdir -p logs
 
-# Set the entrypoint
-ENTRYPOINT ["python", "main.py"]
+# Make entrypoint script executable
+RUN chmod +x entrypoint.sh
 
-# Default command (can be overridden with script file)
+# Set the entrypoint
+ENTRYPOINT ["/app/entrypoint.sh"]
+
+# Default command (empty, handled by entrypoint script)
 CMD []

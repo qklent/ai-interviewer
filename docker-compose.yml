@@ -12,13 +12,9 @@ services:
       # OpenRouter (recommended)
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - OPENROUTER_MODEL=${OPENROUTER_MODEL:-anthropic/claude-3.5-sonnet}
+
+      # Uncomment to run with example_script.txt automatically
+      - USE_EXAMPLE_SCRIPT=true
     volumes:
       # Mount logs directory to persist interview transcripts
       - ./logs:/app/logs
-
-      # Uncomment to mount a script file for scripted mode
-      # - ./example_script.txt:/app/script.txt
-
-    # Default: interactive mode
-    # For scripted mode, uncomment the line below
-    # command: ["script.txt"]

@@ -1,9 +1,10 @@
 """LLM client abstraction for multiple providers."""
+
 import os
 import json
 from abc import ABC, abstractmethod
 from typing import Optional
-from langfuse.decorators import observe
+from langfuse import observe
 
 
 class BaseLLMClient(ABC):
@@ -158,7 +159,9 @@ class OpenRouterClient(BaseLLMClient):
         if not self.api_key:
             raise ValueError("OPENROUTER_API_KEY not found in environment variables")
 
-        self.model = model or os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
+        self.model = model or os.getenv(
+            "OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet"
+        )
 
         # Initialize OpenAI client with OpenRouter base URL
         self.client = OpenAI(
@@ -230,6 +233,8 @@ def get_llm_client(provider: str = "openai", **kwargs) -> BaseLLMClient:
     }
 
     if provider not in providers:
-        raise ValueError(f"Unknown provider: {provider}. Available: {list(providers.keys())}")
+        raise ValueError(
+            f"Unknown provider: {provider}. Available: {list(providers.keys())}"
+        )
 
     return providers[provider](**kwargs)

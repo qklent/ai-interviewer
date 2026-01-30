@@ -34,7 +34,7 @@ Langfuse tracing utilities for interview observability.
 import os
 from typing import Optional
 from langfuse import Langfuse
-from langfuse.decorators import observe, langfuse_context
+from langfuse import observe, langfuse_context
 
 # Initialize Langfuse client (will be None if credentials not provided)
 _langfuse_client: Optional[Langfuse] = None
@@ -83,7 +83,7 @@ def is_tracing_enabled() -> bool:
 
 Add Langfuse import at the top:
 ```python
-from langfuse.decorators import observe
+from langfuse import observe
 ```
 
 Find the `BaseLLMClient` abstract class and add the `@observe` decorator to both methods:
@@ -126,7 +126,7 @@ def generate_json(self, system_prompt: str, user_message: str, response_model, t
 
 #### 3a. Add imports at the top:
 ```python
-from langfuse.decorators import observe, langfuse_context
+from langfuse import observe, langfuse_context
 from src.utils.tracing import initialize_langfuse, is_tracing_enabled
 ```
 
@@ -209,7 +209,7 @@ If you want more granular visibility, add `@observe` decorators to key agent met
 
 Add import:
 ```python
-from langfuse.decorators import observe
+from langfuse import observe
 ```
 
 Add decorators to these methods:
@@ -231,7 +231,7 @@ def generate_response(self, candidate_response: str, observer_analysis: Observer
 
 Add import:
 ```python
-from langfuse.decorators import observe
+from langfuse import observe
 ```
 
 Add decorator:
@@ -245,7 +245,7 @@ def analyze_response(self, candidate_response: str) -> ObserverAnalysis:
 ```python
 # Capture analysis metadata for observability
 if analysis:
-    from langfuse.decorators import langfuse_context
+    from langfuse import langfuse_context
     langfuse_context.update_current_observation(
         metadata={
             "quality": analysis.answer_quality,
@@ -261,7 +261,7 @@ if analysis:
 
 Add import:
 ```python
-from langfuse.decorators import observe
+from langfuse import observe
 ```
 
 Add decorator:
