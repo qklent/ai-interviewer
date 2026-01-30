@@ -36,6 +36,34 @@ python main.py example_script.txt
 ### Development
 No test suite or linting configured currently.
 
+### Prompt Management with Langfuse
+The system supports managing prompts in Langfuse for centralized prompt versioning and editing:
+
+```bash
+# Upload all local prompts to Langfuse
+python scripts/upload_prompts_to_langfuse.py
+```
+
+**How it works:**
+- By default, prompts are loaded from local files in `prompts/` directory
+- If Langfuse credentials are configured, the system will fetch prompts from Langfuse first
+- Falls back to local files if Langfuse is unavailable or prompt doesn't exist
+- Prompts are cached in memory for performance
+
+**Naming convention:**
+- Local files: `prompts/{agent_type}/{prompt_name}.txt`
+- Langfuse prompts: `{agent_type}_{prompt_name}`
+- Example: `prompts/interviewer/system.txt` → `interviewer_system` in Langfuse
+
+**Available prompts:**
+- `interviewer_system` - System prompt for interviewer agent
+- `interviewer_greeting` - Template for initial greeting
+- `interviewer_response` - Template for interviewer responses
+- `observer_system` - System prompt for observer agent
+- `observer_analysis` - Template for response analysis
+- `feedback_generator_system` - System prompt for feedback generator
+- `feedback_generator_feedback` - Template for final feedback
+
 ## Multi-Agent Architecture
 
 The system implements a **hidden reflection** pattern where agents communicate internally before responding to the candidate:
@@ -112,7 +140,11 @@ Optional Langfuse integration for observability:
 - Helps monitor agent behavior and performance
 
 **Prompt Loader** (`src/utils/prompt_loader.py`)
-Utility for loading and managing system prompts for agents
+Utility for loading and managing system prompts for agents:
+- Fetches prompts from Langfuse if available (for centralized management)
+- Falls back to local files in `prompts/` directory
+- Caches prompts in memory for performance
+- Naming: `{agent_type}_{prompt_name}` in Langfuse (e.g., `interviewer_system`)
 
 ## Key Design Principles
 

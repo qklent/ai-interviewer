@@ -11,6 +11,7 @@ from src.agents.observer import ObserverAgent
 from src.agents.feedback_generator import FeedbackGeneratorAgent
 from src.utils.logger import InterviewLogger
 from src.utils.tracing import initialize_langfuse, is_tracing_enabled
+from src.utils.prompt_loader import _loader as prompt_loader
 
 
 class InterviewOrchestrator:
@@ -45,6 +46,9 @@ class InterviewOrchestrator:
 
         # Initialize Langfuse tracing
         self.langfuse_client = initialize_langfuse()
+
+        # Refresh prompt loader to use Langfuse if available
+        prompt_loader.refresh_langfuse_status()
 
         # Interview state
         self.candidate_info: Optional[CandidateInfo] = None
