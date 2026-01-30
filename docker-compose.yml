@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  interview-coach:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: interview-coach
+    stdin_open: true
+    tty: true
+    env_file:
+      - .env
+    environment:
+      # OpenRouter (recommended)
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-anthropic/claude-3.5-sonnet}
+
+      # Langfuse (Optional - for tracing and observability)
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-https://cloud.langfuse.com}
+
+      # Feedback Generation Mode
+      - FEEDBACK_MODE=${FEEDBACK_MODE:-single_model}
+
+      # Multi-Model Feedback Configuration (used when FEEDBACK_MODE=multi_model)
+      - FEEDBACK_EVALUATOR_MODELS=${FEEDBACK_EVALUATOR_MODELS:-google/gemini-2.0-flash-thinking-exp-1219,anthropic/claude-3.5-sonnet}
+      - FEEDBACK_AGGREGATOR_MODEL=${FEEDBACK_AGGREGATOR_MODEL:-openai/gpt-4o}
+      - SAVE_INTERMEDIATE_FEEDBACK=${SAVE_INTERMEDIATE_FEEDBACK:-true}
+      - MULTIMODEL_FALLBACK_MODE=${MULTIMODEL_FALLBACK_MODE:-partial}
+
+      # LLM Retry Configuration
+      - MAX_LLM_RETRIES=${MAX_LLM_RETRIES:-3}
+
+      # Uncomment to run with example_script.txt automatically
+      # - USE_EXAMPLE_SCRIPT=true
+    volumes:
+      # Mount logs directory to persist interview transcripts
+      - ./logs:/app/logs

@@ -1,0 +1,40 @@
+Analyze the candidate's response and provide guidance for the Interviewer.
+
+CANDIDATE INFORMATION:
+- Name: {name}
+- Position: {position}
+- Target Grade: {target_grade}
+- Experience: {experience}
+
+CONVERSATION HISTORY:
+{conversation_history}
+
+CURRENT QUESTION FROM INTERVIEWER:
+{current_question}
+
+CANDIDATE'S RESPONSE:
+{candidate_response}
+
+TOPICS ALREADY COVERED IN THIS INTERVIEW:
+{topics_covered}
+
+Analyze this response and provide:
+- Assessment of answer quality (excellent, good, partial, poor, or incorrect)
+- Confidence level of the candidate (high, medium, or low)
+- Whether the answer is factually accurate
+- Whether hallucination is detected (ONLY TRUE if candidate makes FALSE TECHNICAL CLAIMS)
+- Whether the candidate went off-topic
+- Whether the candidate asked a question
+- Key observations about the response
+- Recommended action for the Interviewer
+- Difficulty adjustment recommendation (increase, decrease, or maintain)
+- Topics covered in this specific response
+- Correct information if hallucination detected
+
+IMPORTANT:
+- Set hallucination_detected=true ONLY when the candidate makes provably FALSE technical claims
+- Asking questions about the job is NOT a hallucination
+- Answering the wrong question is off_topic, NOT a hallucination
+- Admitting "I don't know" is honest, NOT a hallucination
+
+Be thorough in your analysis. If the candidate mentions something technically incorrect or makes up facts (like non-existent Python versions or features), flag it as a hallucination.

@@ -1,0 +1,15 @@
+Generate a friendly greeting to start the technical interview.
+
+CANDIDATE INFORMATION:
+- Name: {name}
+- Position: {position}
+- Target Grade: {target_grade}
+- Experience: {experience}
+
+Create a warm, professional greeting that:
+1. Welcomes the candidate
+2. Briefly explains the interview format
+3. Asks them to introduce themselves and their experience
+
+Provide both the greeting message and your rationale for the approach.
+Answer on Russian

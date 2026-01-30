@@ -19,8 +19,9 @@ pip install -r requirements.txt
 
 # Configure environment
 cp .env.example .env
-# Add one of: OPENAI_API_KEY, ANTHROPIC_API_KEY, or OPENROUTER_API_KEY to .env
-# For OpenRouter, also set OPENROUTER_MODEL (optional, defaults to anthropic/claude-3.5-sonnet)
+# Add OPENROUTER_API_KEY to .env
+# Also set OPENROUTER_MODEL (optional, defaults to anthropic/claude-3.5-sonnet)
+# Optionally add Langfuse credentials for tracing: LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_HOST
 ```
 
 ### Running the Application
@@ -34,6 +35,36 @@ python main.py example_script.txt
 
 ### Development
 No test suite or linting configured currently.
+
+### Prompt Management with Langfuse
+The system supports managing prompts in Langfuse for centralized prompt versioning and editing:
+
+```bash
+# Upload all local prompts to Langfuse
+python scripts/upload_prompts_to_langfuse.py
+```
+
+**How it works:**
+- By default, prompts are loaded from local files in `prompts/` directory
+- If Langfuse credentials are configured, the system will fetch prompts from Langfuse first
+- Falls back to local files if Langfuse is unavailable or prompt doesn't exist
+- Prompts are cached in memory for performance
+
+**Naming convention:**
+- Local files: `prompts/{agent_type}/{prompt_name}.txt`
+- Langfuse prompts: `{agent_type}_{prompt_name}`
+- Example: `prompts/interviewer/system.txt` → `interviewer_system` in Langfuse
+
+**Available prompts:**
+- `interviewer_system` - System prompt for interviewer agent
+- `interviewer_greeting` - Template for initial greeting
+- `interviewer_response` - Template for interviewer responses
+- `observer_system` - System prompt for observer agent
+- `observer_analysis` - Template for response analysis
+- `feedback_generator_system` - System prompt for feedback generator
+- `feedback_generator_feedback` - Template for final feedback
+- `feedback_generator_aggregate_system` - System prompt for multi-model feedback aggregation
+- `feedback_generator_aggregate_feedback` - Template for aggregating multiple feedback evaluations
 
 ## Multi-Agent Architecture
 
@@ -61,6 +92,14 @@ The system implements a **hidden reflection** pattern where agents communicate i
    - Evaluates soft skills (clarity, honesty, engagement)
    - Creates personalized learning roadmap
 
+4. **MultiModelFeedbackGenerator** (`src/agents/multi_model_feedback_generator.py`) - Multi-model feedback (optional)
+   - Uses three different LLMs for reduced bias and improved evaluation quality
+   - Model 1 (Google): Independent evaluation
+   - Model 2 (Anthropic): Independent evaluation
+   - Model 3 (OpenAI): Aggregates both into final synthesis
+   - Configurable via `FEEDBACK_MODE=multi_model` environment variable
+   - Fallback to single-model on failures
+
 ### Communication Pattern
 On each turn:
 1. Candidate provides response
@@ -81,12 +120,10 @@ The `InterviewOrchestrator` class coordinates all agents and manages interview l
 - Triggers feedback generation on interview completion
 
 ### LLM Abstraction (`src/core/llm_client.py`)
-Factory pattern for multi-provider support:
-- `BaseLLMClient` - Abstract interface with `generate()` and `generate_json()` methods
-- `OpenAIClient` - Uses `gpt-4o-mini` by default
-- `AnthropicClient` - Uses `claude-3-5-sonnet-20241022` by default
+LLM client abstraction using OpenRouter:
+- `BaseLLMClient` - Abstract interface with `generate()`, `generate_json()`, and `generate_structured()` methods
 - `OpenRouterClient` - Uses `anthropic/claude-3.5-sonnet` by default, supports any OpenRouter model
-- Provider auto-selected based on available API key (priority: OpenRouter → OpenAI → Anthropic)
+- Configure model via OPENROUTER_MODEL environment variable
 
 ### Data Models (`src/core/models.py`)
 Structured with dataclasses:
@@ -95,11 +132,37 @@ Structured with dataclasses:
 - `FinalFeedback` - Verdict, skills assessment, soft skills, roadmap
 - `InterviewSession` - Complete log with turns and feedback
 
-### Logging (`src/utils/logger.py`)
+### Utilities
+
+**Interview Session Logging** (`src/utils/logger.py`)
 Saves complete interview transcripts to `logs/` as JSON files including:
 - Candidate metadata
 - All conversation turns with visible and internal messages
 - Final feedback with structured assessment
+
+**Application Logging** (`src/utils/app_logger.py`)
+Comprehensive logging system for debugging and error tracking:
+- Creates `logs/app.log` with all events (DEBUG level+)
+- Creates `logs/errors.log` with only errors and exceptions (ERROR level+)
+- Rotating file handlers (10MB max, 5 backups each)
+- Logs all LLM API calls, exceptions, and critical operations
+- Console output limited to WARNING+ for clean UX
+- Automatic initialization on module import
+- See `LOGGING.md` for detailed usage guide
+
+**Tracing** (`src/utils/tracing.py`)
+Optional Langfuse integration for observability:
+- Initializes Langfuse client with credentials from environment variables
+- Provides `@observe` decorator for function tracing
+- Falls back gracefully if credentials not configured
+- Helps monitor agent behavior and performance
+
+**Prompt Loader** (`src/utils/prompt_loader.py`)
+Utility for loading and managing system prompts for agents:
+- Fetches prompts from Langfuse if available (for centralized management)
+- Falls back to local files in `prompts/` directory
+- Caches prompts in memory for performance
+- Naming: `{agent_type}_{prompt_name}` in Langfuse (e.g., `interviewer_system`)
 
 ## Key Design Principles
 
@@ -116,7 +179,13 @@ Observer is specifically trained to detect false technical claims (e.g., "Python
 Observer maintains a list of covered topics. Interviewer explicitly avoids asking about topics already thoroughly discussed.
 
 ### Stop Commands
-Interview ends when candidate says stop phrases (detected via regex in `orchestrator.py:122-132`), triggering feedback generation.
+Interview ends when candidate says stop phrases (detected via regex in `orchestrator.py:148-155`), triggering feedback generation. Supported patterns:
+- `стоп (игра|интервью)?` - Russian: "stop (game|interview)?"
+- `stop (game|interview)?` - English equivalent
+- `давай фидбэк` - Russian: "give feedback"
+- `give feedback` - English equivalent
+- `завершить` - Russian: "finish/end"
+- `end interview` - English equivalent
 
 ## Script File Format
 
@@ -133,3 +202,94 @@ Second candidate response
 ```
 
 Lines before `---` are metadata (key: value format). Lines after are candidate responses (one per line).
+
+## Multi-Model Feedback Generation
+
+The system supports an optional multi-model feedback generation mode that reduces bias and improves evaluation quality by using multiple LLMs for independent evaluations and one aggregator model to synthesize them.
+
+### Architecture
+
+Following LLM-as-a-judge best practices:
+
+1. **Evaluator Models** (2+ models) - Generate independent feedback evaluations
+   - Default: Google Gemini and Anthropic Claude
+   - Configurable: Can use any models or providers
+2. **Aggregator Model** (1 model) - Synthesizes all evaluations into final feedback
+   - Default: OpenAI GPT-4
+   - Configurable: Can use any model
+
+This approach leverages diverse model perspectives while minimizing model-specific biases.
+
+### Configuration
+
+Enable multi-model mode by setting environment variables in `.env`:
+
+```bash
+# Enable multi-model feedback generation
+FEEDBACK_MODE=multi_model
+
+# Evaluator models: Comma-separated list (minimum 2 required)
+FEEDBACK_EVALUATOR_MODELS=google/gemini-2.0-flash-thinking-exp-1219,anthropic/claude-3.5-sonnet
+
+# Aggregator model: Single model for synthesis
+FEEDBACK_AGGREGATOR_MODEL=openai/gpt-4o
+
+# Optional: Save intermediate feedbacks to logs for analysis
+SAVE_INTERMEDIATE_FEEDBACK=true
+
+# Optional: Fallback behavior when one model fails
+# Options: partial (use successful one), fail (raise error), single_model (use default)
+MULTIMODEL_FALLBACK_MODE=partial
+```
+
+**Examples:**
+```bash
+# Use 3 evaluators (Google, Anthropic, OpenAI) + Anthropic aggregator
+FEEDBACK_EVALUATOR_MODELS=google/gemini-2.0-flash,anthropic/claude-3.5-sonnet,openai/gpt-4o
+FEEDBACK_AGGREGATOR_MODEL=anthropic/claude-3.5-sonnet
+
+# Use 2 different Claude versions + GPT aggregator
+FEEDBACK_EVALUATOR_MODELS=anthropic/claude-3.5-sonnet,anthropic/claude-3-opus
+FEEDBACK_AGGREGATOR_MODEL=openai/gpt-4o
+```
+
+### How It Works
+
+**Stage 1: Independent Evaluations**
+- Each evaluator model analyzes the interview independently
+- All use the same `FeedbackGeneratorAgent` with different LLM clients
+- No communication between evaluators (eliminates anchoring bias)
+
+**Stage 2: Meta-Evaluation**
+- Aggregator model receives all independent evaluations
+- Identifies areas of consensus (high confidence signal)
+- Analyzes areas of divergence (makes reasoned final decisions)
+- Synthesizes into unified, balanced assessment
+
+**Error Handling:**
+- If all evaluators fail: Falls back to single-model approach
+- If only one evaluator succeeds: Uses that evaluation (skips aggregation)
+- If aggregation fails: Falls back to first successful evaluation
+- Configurable fallback modes via `MULTIMODEL_FALLBACK_MODE`
+
+### Benefits
+
+- **Reduced Bias:** Multiple models minimize individual model biases
+- **Improved Quality:** Diverse perspectives provide more balanced assessments
+- **Higher Confidence:** Agreement between models strengthens evaluation confidence
+- **Better Coverage:** Each model may catch issues the other misses
+
+### Cost Considerations
+
+Multi-model mode uses 3 API calls vs 1, resulting in approximately:
+- **Cost multiplier:** ~3x ($0.16 vs $0.05 per feedback)
+- **Latency:** Sequential execution (parallel execution possible as future optimization)
+
+Enable selectively for high-stakes interviews where evaluation quality is critical.
+
+### Backward Compatibility
+
+The system maintains full backward compatibility:
+- Default mode (`FEEDBACK_MODE=single_model`) works exactly as before
+- No breaking changes to existing code or APIs
+- Easy rollback by changing environment variable

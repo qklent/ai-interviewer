@@ -12,6 +12,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from src.core.orchestrator import InterviewOrchestrator
+from src.utils.app_logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def print_banner():
@@ -50,14 +53,14 @@ def get_candidate_info() -> tuple[str, str, str, str]:
 
 def run_interactive_interview():
     """Run an interactive interview session."""
+    logger.info("Starting interactive interview mode")
     print_banner()
 
-    # Check for API keys
-    if not os.getenv("OPENAI_API_KEY") and not os.getenv("ANTHROPIC_API_KEY") and not os.getenv("OPENROUTER_API_KEY"):
-        print("ERROR: No API key found!")
-        print("Please set one of the following environment variables:")
-        print("  - OPENAI_API_KEY")
-        print("  - ANTHROPIC_API_KEY")
+    # Check for API key
+    if not os.getenv("OPENROUTER_API_KEY"):
+        logger.error("OPENROUTER_API_KEY not found in environment variables")
+        print("ERROR: OPENROUTER_API_KEY not found!")
+        print("Please set the following environment variable:")
         print("  - OPENROUTER_API_KEY")
         print()
         print("Example:")
@@ -65,21 +68,16 @@ def run_interactive_interview():
         print("  export OPENROUTER_MODEL=anthropic/claude-3.5-sonnet")
         sys.exit(1)
 
-    # Determine which provider to use
-    if os.getenv("OPENROUTER_API_KEY"):
-        provider = "openrouter"
-        model = os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
-        print(f"Using OPENROUTER as LLM provider with model: {model}")
-    elif os.getenv("OPENAI_API_KEY"):
-        provider = "openai"
-        print(f"Using OPENAI as LLM provider")
-    else:
-        provider = "anthropic"
-        print(f"Using ANTHROPIC as LLM provider")
+    # Use OpenRouter as the provider
+    provider = "openrouter"
+    model = os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
+    logger.info(f"Using OpenRouter with model: {model}")
+    print(f"Using OPENROUTER as LLM provider with model: {model}")
     print()
 
     # Get candidate info
     name, position, grade, experience = get_candidate_info()
+    logger.info(f"Candidate info collected: {name}, {position}, {grade}")
     print()
 
     # Initialize orchestrator
@@ -89,6 +87,7 @@ def run_interactive_interview():
             output_dir="logs",
         )
     except Exception as e:
+        logger.exception(f"Failed to initialize orchestrator: {e}")
         print(f"ERROR: Failed to initialize: {e}")
         sys.exit(1)
 
@@ -121,16 +120,20 @@ def run_interactive_interview():
                     break
 
             except KeyboardInterrupt:
+                logger.info("Interview interrupted by user (Ctrl+C)")
                 print("\n\nInterview interrupted by user.")
                 break
 
     except Exception as e:
+        logger.exception(f"Critical error during interview: {e}")
         print(f"\nERROR: {e}")
+        print("\nFull error details have been logged to logs/errors.log")
         import traceback
 
         traceback.print_exc()
         sys.exit(1)
 
+    logger.info("Interactive interview completed")
     print("\nThank you for using Multi-Agent Interview Coach!")
 
 
@@ -147,73 +150,102 @@ def run_scripted_interview(script_file: str):
     <response 2>
     ...
     """
+    logger.info(f"Starting scripted interview mode with file: {script_file}")
     print_banner()
 
-    if not os.path.exists(script_file):
-        print(f"ERROR: Script file not found: {script_file}")
-        sys.exit(1)
+    try:
+        if not os.path.exists(script_file):
+            logger.error(f"Script file not found: {script_file}")
+            print(f"ERROR: Script file not found: {script_file}")
+            sys.exit(1)
 
-    with open(script_file, "r", encoding="utf-8") as f:
-        content = f.read()
+        with open(script_file, "r", encoding="utf-8") as f:
+            content = f.read()
 
-    # Parse script
-    if "---" not in content:
-        print("ERROR: Invalid script format. Missing '---' separator.")
-        sys.exit(1)
+        # Parse script
+        if "---" not in content:
+            logger.error("Invalid script format: Missing '---' separator")
+            print("ERROR: Invalid script format. Missing '---' separator.")
+            sys.exit(1)
 
-    header, responses_text = content.split("---", 1)
+        header, responses_text = content.split("---", 1)
 
-    # Parse header
-    info = {}
-    for line in header.strip().split("\n"):
-        if ":" in line:
-            key, value = line.split(":", 1)
-            info[key.strip().upper()] = value.strip()
+        # Parse header
+        info = {}
+        for line in header.strip().split("\n"):
+            if ":" in line:
+                key, value = line.split(":", 1)
+                info[key.strip().upper()] = value.strip()
 
-    name = info.get("NAME", "Candidate")
-    position = info.get("POSITION", "Software Developer")
-    grade = info.get("GRADE", "Junior")
-    experience = info.get("EXPERIENCE", "")
+        name = info.get("NAME", "Candidate")
+        position = info.get("POSITION", "Software Developer")
+        grade = info.get("GRADE", "Junior")
+        experience = info.get("EXPERIENCE", "")
 
-    # Parse responses
-    responses = [r.strip() for r in responses_text.strip().split("\n") if r.strip()]
+        # Parse responses
+        responses = [r.strip() for r in responses_text.strip().split("\n") if r.strip()]
 
-    print(f"Running scripted interview for: {name}")
-    print(f"Position: {position}, Grade: {grade}")
-    print(f"Responses to process: {len(responses)}")
-    print()
+        logger.info(f"Script loaded: {name}, {position}, {grade}, {len(responses)} responses")
+        print(f"Running scripted interview for: {name}")
+        print(f"Position: {position}, Grade: {grade}")
+        print(f"Responses to process: {len(responses)}")
+        print()
 
-    # Determine provider
-    if os.getenv("OPENROUTER_API_KEY"):
+        # Use OpenRouter as the provider
         provider = "openrouter"
-    elif os.getenv("OPENAI_API_KEY"):
-        provider = "openai"
-    else:
-        provider = "anthropic"
+        logger.info(f"Using provider: {provider}")
 
-    # Initialize and run
-    orchestrator = InterviewOrchestrator(llm_provider=provider, output_dir="logs")
+        # Initialize and run
+        orchestrator = InterviewOrchestrator(llm_provider=provider, output_dir="logs")
 
-    print("=" * 60)
-    greeting = orchestrator.start_interview(name, position, grade, experience)
-    print(f"\nInterviewer: {greeting}\n")
+        print("=" * 60)
+        greeting = orchestrator.start_interview(name, position, grade, experience)
+        print(f"\nInterviewer: {greeting}\n")
 
-    for i, response in enumerate(responses, 1):
-        print(f"You [{i}]: {response}\n")
-        reply, ended = orchestrator.process_response(response)
-        print(f"Interviewer: {reply}\n")
-        print("-" * 40)
+        for i, response in enumerate(responses, 1):
+            logger.debug(f"Processing scripted response {i}/{len(responses)}")
+            print(f"You [{i}]: {response}\n")
+            reply, ended = orchestrator.process_response(response)
+            print(f"Interviewer: {reply}\n")
+            print("-" * 40)
 
-        if ended:
-            break
+            if ended:
+                break
 
-    print("\nScript completed!")
+        logger.info("Scripted interview completed successfully")
+        print("\nScript completed!")
+
+    except Exception as e:
+        logger.exception(f"Critical error during scripted interview: {e}")
+        print(f"\nERROR: {e}")
+        print("\nFull error details have been logged to logs/errors.log")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        # Script mode
-        run_scripted_interview(sys.argv[1])
-    else:
-        # Interactive mode
-        run_interactive_interview()
+    try:
+        logger.info("=" * 60)
+        logger.info("Multi-Agent Interview Coach started")
+        logger.info(f"Command: {' '.join(sys.argv)}")
+        logger.info("=" * 60)
+
+        if len(sys.argv) > 1:
+            # Script mode
+            run_scripted_interview(sys.argv[1])
+        else:
+            # Interactive mode
+            run_interactive_interview()
+
+        logger.info("Application exited normally")
+
+    except Exception as e:
+        logger.exception(f"Unhandled exception at top level: {e}")
+        print("\n" + "=" * 60)
+        print("CRITICAL ERROR - Application crashed")
+        print("=" * 60)
+        print(f"\nError: {e}")
+        print("\nFull error details have been logged to logs/errors.log")
+        print("Please check the log files for more information.")
+        sys.exit(1)

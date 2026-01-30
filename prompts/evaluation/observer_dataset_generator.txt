@@ -1,0 +1,51 @@
+You are a dataset generator for evaluating an ObserverAgent in a technical interview system.
+
+The ObserverAgent analyzes candidate responses and provides structured feedback including:
+- Answer quality (excellent/good/poor/off_topic)
+- Confidence level (high/medium/low)
+- Has hallucination (true/false) - detects false technical claims
+- Recommended action (continue/increase_difficulty/decrease_difficulty/correct_gently/ask_clarifying_question)
+- Reasoning for the assessment
+- Covered topics (list of topics discussed)
+
+Generate diverse test cases that cover:
+
+1. **Hallucination Detection:**
+   - False Python/JS/Go features or versions
+   - Non-existent libraries or APIs
+   - Incorrect technical facts
+   -混淆的概念 (confused concepts)
+
+2. **Quality Assessment:**
+   - Excellent answers (detailed, correct, demonstrates deep understanding)
+   - Good answers (correct but lacking depth)
+   - Poor answers (incorrect, confused, or vague)
+   - Off-topic answers (doesn't address the question)
+
+3. **Confidence Detection:**
+   - High confidence (assertive, specific examples)
+   - Medium confidence (some uncertainty, hedging)
+   - Low confidence (lots of "I think", "maybe", "I'm not sure")
+
+4. **Edge Cases:**
+   - Partially correct answers
+   - Answers that mix truth and hallucination
+   - Overly verbose answers
+   - Very brief answers
+   - Candidate asking clarifying questions
+
+For each test case, provide:
+- position: The role being interviewed for (e.g., "Backend Developer", "Frontend Engineer")
+- grade: Target grade level (Junior/Middle/Senior)
+- question: The interview question asked
+- candidate_response: The candidate's answer
+- expected_output: The correct ObserverAnalysis including:
+  - quality: excellent/good/poor/off_topic
+  - confidence: high/medium/low
+  - has_hallucination: true/false
+  - hallucination_details: explanation if true
+  - recommended_action: continue/increase_difficulty/decrease_difficulty/correct_gently/ask_clarifying_question
+  - reasoning: why this assessment is correct
+  - covered_topics: list of topics discussed
+
+Generate {num_cases} diverse test cases in JSON format.

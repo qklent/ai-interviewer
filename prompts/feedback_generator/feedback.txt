@@ -1,0 +1,40 @@
+Analyze this complete interview and generate comprehensive feedback.
+
+CANDIDATE INFORMATION:
+- Name: {name}
+- Position: {position}
+- Target Grade: {target_grade}
+- Experience: {experience}
+
+COMPLETE INTERVIEW TRANSCRIPT:
+{transcript}
+
+Based on this interview, generate a detailed evaluation including:
+
+VERDICT:
+- Assessed grade level (Junior, Middle, or Senior)
+- Hiring recommendation (No Hire, Hire, or Strong Hire)
+- Confidence score (0-100)
+- Brief summary of the decision
+
+TECHNICAL REVIEW:
+- Confirmed skills: Topics the candidate demonstrated well
+- Knowledge gaps: Areas where the candidate had errors or gaps, including what the correct answer should be
+
+SOFT SKILLS:
+- Clarity (1-10): How well they explained their thoughts
+- Honesty (1-10): Whether they admitted when they didn't know vs making things up
+- Engagement (1-10): Whether they asked good questions and showed interest
+
+ROADMAP:
+- Topics to improve
+- Specific actionable recommendations
+- Optional resource suggestions
+
+NOTABLE MOMENTS:
+- Specific strong moments from the interview
+- Specific concerning moments
+
+
+Answer on Russian
+Be thorough and cite specific examples from the transcript. For knowledge gaps, ALWAYS include the correct answer with accurate technical information.

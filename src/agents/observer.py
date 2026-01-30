@@ -1,76 +1,18 @@
 """Observer Agent - analyzes candidate responses and guides the Interviewer."""
+
 from typing import Optional
 
+from langfuse import observe, get_client
 from src.core.llm_client import BaseLLMClient
 from src.core.models import ObserverAnalysis, CandidateInfo, Grade
+from src.core.schemas import ObserverAnalysisSchema
+from src.utils.prompt_loader import load_prompt
+from src.utils.tracing import is_tracing_enabled
 
 
-OBSERVER_SYSTEM_PROMPT = """You are an experienced technical interview Observer/Mentor. Your role is to:
-1. Analyze candidate responses for accuracy, completeness, and confidence
-2. Detect factual errors, hallucinations, or misleading statements
-3. Identify when candidates try to change the topic (off-topic responses)
-4. Recognize when candidates ask their own questions
-5. Provide guidance to the Interviewer agent on how to proceed
-
-You work BEHIND THE SCENES and your analysis is NOT shown to the candidate.
-
-Key responsibilities:
-- Fact-check technical claims made by the candidate
-- Assess the depth of knowledge demonstrated
-- Detect "hallucinations" - confident but false statements (e.g., "Python 4.0 will remove for loops")
-- Identify evasive or off-topic answers
-- Recommend difficulty adjustments based on performance
-- Notice if the candidate asks questions (this should be addressed by Interviewer)
-
-Your analysis helps maintain a fair and adaptive interview process.
-
-IMPORTANT RULES:
-1. Be skeptical of unusual technical claims - verify against known facts
-2. "Python 4.0" does not exist - this is a hallucination test
-3. Statements like "neural connections replacing loops" are nonsense - flag as hallucination
-4. If candidate asks a legitimate question about the role/company, note it for the Interviewer to address
-5. Track what topics have already been discussed to avoid repetition"""
-
-
-OBSERVER_ANALYSIS_PROMPT = """Analyze the candidate's response and provide guidance for the Interviewer.
-
-CANDIDATE INFORMATION:
-- Name: {name}
-- Position: {position}
-- Target Grade: {target_grade}
-- Experience: {experience}
-
-CONVERSATION HISTORY:
-{conversation_history}
-
-CURRENT QUESTION FROM INTERVIEWER:
-{current_question}
-
-CANDIDATE'S RESPONSE:
-{candidate_response}
-
-TOPICS ALREADY COVERED IN THIS INTERVIEW:
-{topics_covered}
-
-Analyze this response and return a JSON object with the following structure:
-{{
-    "answer_quality": "excellent|good|partial|poor|incorrect",
-    "confidence_level": "high|medium|low",
-    "factual_accuracy": true|false,
-    "hallucination_detected": true|false,
-    "hallucination_details": "description if detected, null otherwise",
-    "off_topic": true|false,
-    "off_topic_details": "description if detected, null otherwise",
-    "candidate_question_detected": true|false,
-    "candidate_question": "the question if detected, null otherwise",
-    "key_observations": ["observation1", "observation2"],
-    "recommended_action": "specific instruction for Interviewer",
-    "difficulty_adjustment": "increase|decrease|maintain",
-    "topics_covered_in_this_response": ["topic1", "topic2"],
-    "correct_information": "if hallucination detected, provide the correct facts here"
-}}
-
-Be thorough in your analysis. If the candidate mentions something technically incorrect or makes up facts (like non-existent Python versions or features), flag it as a hallucination."""
+# Load prompts from files
+OBSERVER_SYSTEM_PROMPT, OBSERVER_SYSTEM_METADATA = load_prompt("observer", "system")
+OBSERVER_ANALYSIS_PROMPT, OBSERVER_ANALYSIS_METADATA = load_prompt("observer", "analysis")
 
 
 class ObserverAgent:
@@ -80,6 +22,7 @@ class ObserverAgent:
         self.llm = llm_client
         self.topics_covered: list[str] = []
 
+    @observe(name="Observer: Analyze Response")
     def analyze_response(
         self,
         candidate_info: CandidateInfo,
@@ -99,7 +42,9 @@ class ObserverAgent:
             history_text = "This is the first turn of the interview."
 
         # Format topics covered
-        topics_text = ", ".join(self.topics_covered) if self.topics_covered else "None yet"
+        topics_text = (
+            ", ".join(self.topics_covered) if self.topics_covered else "None yet"
+        )
 
         prompt = OBSERVER_ANALYSIS_PROMPT.format(
             name=candidate_info.name,
@@ -112,32 +57,48 @@ class ObserverAgent:
             topics_covered=topics_text,
         )
 
-        response = self.llm.generate_json(
+        # Use structured outputs with Pydantic schema
+        response = self.llm.generate_structured(
             system_prompt=OBSERVER_SYSTEM_PROMPT,
             user_prompt=prompt,
+            response_format=ObserverAnalysisSchema,
             temperature=0.3,
+            prompt_metadata=OBSERVER_SYSTEM_METADATA,
         )
 
         # Update topics covered
-        new_topics = response.get("topics_covered_in_this_response", [])
+        new_topics = response.topics_covered_in_this_response
         for topic in new_topics:
             if topic not in self.topics_covered:
                 self.topics_covered.append(topic)
 
-        # Build analysis object
+        # Build analysis object from structured response
         analysis = ObserverAnalysis(
-            answer_quality=response.get("answer_quality", "partial"),
-            confidence_level=response.get("confidence_level", "medium"),
-            factual_accuracy=response.get("factual_accuracy", True),
-            hallucination_detected=response.get("hallucination_detected", False),
-            off_topic=response.get("off_topic", False),
-            candidate_question_detected=response.get("candidate_question_detected", False),
-            candidate_question=response.get("candidate_question"),
-            key_observations=response.get("key_observations", []),
-            recommended_action=response.get("recommended_action", ""),
-            difficulty_adjustment=response.get("difficulty_adjustment", "maintain"),
+            answer_quality=response.answer_quality,
+            confidence_level=response.confidence_level,
+            factual_accuracy=response.factual_accuracy,
+            hallucination_detected=response.hallucination_detected,
+            off_topic=response.off_topic,
+            candidate_question_detected=response.candidate_question_detected,
+            candidate_question=response.candidate_question,
+            key_observations=response.key_observations,
+            recommended_action=response.recommended_action,
+            difficulty_adjustment=response.difficulty_adjustment,
             topics_covered=self.topics_covered.copy(),
         )
+
+        # Capture analysis metadata for observability
+        if analysis and is_tracing_enabled():
+            langfuse = get_client()
+            langfuse.update_current_span(
+                metadata={
+                    "quality": analysis.answer_quality,
+                    "hallucination": analysis.hallucination_detected,
+                    "recommended_action": analysis.recommended_action,
+                    "difficulty_adjustment": analysis.difficulty_adjustment,
+                    "off_topic": analysis.off_topic,
+                }
+            )
 
         return analysis
 
@@ -151,15 +112,25 @@ class ObserverAgent:
 
         # Hallucination check
         if analysis.hallucination_detected:
-            thoughts.append("[Observer]: WARNING - Hallucination detected! Candidate made false claims.")
+            thoughts.append(
+                "[Observer]: WARNING - Hallucination detected! Candidate made false technical claims."
+            )
 
         # Off-topic check
-        if analysis.off_topic:
-            thoughts.append("[Observer]: Candidate went off-topic, need to redirect.")
+        if analysis.off_topic and not analysis.hallucination_detected:
+            thoughts.append(
+                "[Observer]: Candidate went off-topic or answered wrong question, need to redirect."
+            )
+        elif analysis.off_topic and analysis.hallucination_detected:
+            thoughts.append(
+                "[Observer]: Candidate went off-topic with hallucinated information."
+            )
 
         # Candidate question
         if analysis.candidate_question_detected:
-            thoughts.append(f"[Observer]: Candidate asked a question: '{analysis.candidate_question}' - Interviewer should address it.")
+            thoughts.append(
+                f"[Observer]: Candidate asked a question: '{analysis.candidate_question}' - Interviewer should address it."
+            )
 
         # Key observations
         for obs in analysis.key_observations:
@@ -170,7 +141,9 @@ class ObserverAgent:
 
         # Difficulty adjustment
         if analysis.difficulty_adjustment != "maintain":
-            thoughts.append(f"[Observer]: Recommend to {analysis.difficulty_adjustment} question difficulty.")
+            thoughts.append(
+                f"[Observer]: Recommend to {analysis.difficulty_adjustment} question difficulty."
+            )
 
         return " | ".join(thoughts)
 
