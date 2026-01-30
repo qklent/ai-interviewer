@@ -18,7 +18,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Dict, Optional, List
+from typing import Dict, List
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -175,10 +175,8 @@ def get_prompt_content(
 
         return prompt.prompt
     except Exception as e:
-        print(
-            f"Warning: Could not load prompt '{prompt_name}' version {version} from Langfuse: {e}"
-        )
-        print(f"Falling back to local file...")
+        print(f"Warning: Could not load prompt '{prompt_name}' version {version} from Langfuse: {e}")
+        print("Falling back to local file...")
         return load_prompt(agent_name, prompt_type)
 
 
@@ -202,7 +200,6 @@ def extract_observer_test_cases(session: Dict) -> List[Dict]:
     test_cases = []
     conversation_history = session.get("conversation_history", [])
     observer_analyses = session.get("observer_analyses", [])
-    covered_topics = session.get("covered_topics", [])
 
     # Track cumulative covered topics up to each turn
     cumulative_topics = []
@@ -680,7 +677,7 @@ def run_evaluation(
         run_name = f"{agent_name}_v{prompt_version}"
 
     print(f"\n{'=' * 80}")
-    print(f"Starting Evaluation")
+    print("Starting Evaluation")
     print(f"{'=' * 80}")
     print(f"Agent: {agent_name}")
     print(f"Prompt Version: {prompt_version}")
@@ -695,8 +692,8 @@ def run_evaluation(
         print(f"✓ Loaded dataset '{dataset_name}' with {len(dataset_items)} sessions\n")
     except Exception as e:
         print(f"✗ Error loading dataset '{dataset_name}': {e}")
-        print(f"\nTo create a dataset, use:")
-        print(f"  python scripts/generate_dataset.py --mode full-session --num-cases 5")
+        print("\nTo create a dataset, use:")
+        print("  python scripts/generate_dataset.py --mode full-session --num-cases 5")
         return
 
     # Extract agent-specific test cases from full sessions
@@ -742,23 +739,30 @@ def run_evaluation(
     else:
         raise ValueError(f"Unknown agent: {agent_name}")
 
-    # Create a temporary dataset-like structure for extracted test cases
-    # Langfuse experiment expects items with .input and .expected_output attributes
-    class TestCaseItem:
-        def __init__(self, test_case):
-            self.input = test_case["input"]
-            self.expected_output = test_case.get("expected_output")
-
-    test_case_items = [TestCaseItem(tc) for tc in extracted_test_cases]
-
     # Run experiment
     print("Running experiment... This may take a few minutes.\n")
 
-    # We need to manually iterate through test cases since we're not using a Langfuse dataset directly
+    # We need to manually iterate through test cases
     results = []
-    for i, item in enumerate(test_case_items):
-        print(f"Evaluating test case {i + 1}/{len(test_case_items)}...")
+    for i, test_case in enumerate(extracted_test_cases):
+        print(f"Evaluating test case {i + 1}/{len(extracted_test_cases)}...")
         try:
+            # Create a simple object that mimics Langfuse dataset item structure
+            class TestCaseItem:
+                def __init__(self, tc):
+                    self.input = tc["input"]
+                    self.expected_output = tc.get("expected_output")
+
+                def __getitem__(self, key):
+                    # Allow dict-style access for backwards compatibility
+                    if key == "input":
+                        return self.input
+                    elif key == "expected_output":
+                        return self.expected_output
+                    raise KeyError(key)
+
+            item = TestCaseItem(test_case)
+
             # Run task
             output = task_fn(item)
 
@@ -794,12 +798,12 @@ def run_evaluation(
     print(f"{'=' * 80}\n")
     print(f"Total test cases: {len(results)}")
     print(f"Average score: {avg_score:.3f}")
-    print(f"\nPer-case results:")
+    print("\nPer-case results:")
     for result in results:
         print(f"  Case {result['test_case']}: {result['score']:.3f} - {result['comment'][:100]}...")
 
     print(f"\n{'=' * 80}")
-    print(f"✓ Evaluation complete!")
+    print("✓ Evaluation complete!")
     print(f"{'=' * 80}\n")
 
 
