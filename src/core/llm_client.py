@@ -274,12 +274,15 @@ class AnthropicClient(BaseLLMClient):
                 try:
                     result = json.loads(content)
                 except json.JSONDecodeError as e:
-                    logger.warning(f"JSON parse failed, attempting to extract: {e}")
+                    logger.debug(f"Response not pure JSON, extracting (error: {e})")
+                    logger.debug(f"Raw content preview (first 500 chars): {content[:500]}")
                     # Try to find JSON in the response
                     start = content.find("{")
                     end = content.rfind("}") + 1
                     if start != -1 and end > start:
-                        result = json.loads(content[start:end])
+                        extracted = content[start:end]
+                        result = json.loads(extracted)
+                        logger.debug(f"JSON extraction successful (stripped {start} leading + {len(content) - end} trailing chars)")
                     else:
                         logger.error(f"Could not extract JSON from response: {content[:200]}")
                         raise
@@ -429,12 +432,15 @@ class OpenRouterClient(BaseLLMClient):
                 try:
                     result = json.loads(content)
                 except json.JSONDecodeError as e:
-                    logger.warning(f"JSON parse failed, attempting to extract: {e}")
+                    logger.debug(f"Response not pure JSON, extracting (error: {e})")
+                    logger.debug(f"Raw content preview (first 500 chars): {content[:500]}")
                     # Try to find JSON in the response
                     start = content.find("{")
                     end = content.rfind("}") + 1
                     if start != -1 and end > start:
-                        result = json.loads(content[start:end])
+                        extracted = content[start:end]
+                        result = json.loads(extracted)
+                        logger.debug(f"JSON extraction successful (stripped {start} leading + {len(content) - end} trailing chars)")
                     else:
                         logger.error(f"Could not extract JSON from response: {content[:200]}")
                         raise
