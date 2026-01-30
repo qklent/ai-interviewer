@@ -126,11 +126,21 @@ Structured with dataclasses:
 
 ### Utilities
 
-**Logging** (`src/utils/logger.py`)
+**Interview Session Logging** (`src/utils/logger.py`)
 Saves complete interview transcripts to `logs/` as JSON files including:
 - Candidate metadata
 - All conversation turns with visible and internal messages
 - Final feedback with structured assessment
+
+**Application Logging** (`src/utils/app_logger.py`)
+Comprehensive logging system for debugging and error tracking:
+- Creates `logs/app.log` with all events (DEBUG level+)
+- Creates `logs/errors.log` with only errors and exceptions (ERROR level+)
+- Rotating file handlers (10MB max, 5 backups each)
+- Logs all LLM API calls, exceptions, and critical operations
+- Console output limited to WARNING+ for clean UX
+- Automatic initialization on module import
+- See `LOGGING.md` for detailed usage guide
 
 **Tracing** (`src/utils/tracing.py`)
 Optional Langfuse integration for observability:
