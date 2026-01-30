@@ -141,11 +141,89 @@ class AnthropicClient(BaseLLMClient):
             raise
 
 
+class OpenRouterClient(BaseLLMClient):
+    """OpenRouter API client (OpenAI-compatible interface)."""
+
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+    ):
+        from openai import OpenAI
+
+        self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
+        if not self.api_key:
+            raise ValueError("OPENROUTER_API_KEY not found in environment variables")
+
+        self.model = model or os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
+
+        # Initialize OpenAI client with OpenRouter base URL
+        self.client = OpenAI(
+            api_key=self.api_key,
+            base_url="https://openrouter.ai/api/v1",
+        )
+
+    def generate(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.7,
+        max_tokens: int = 2000,
+    ) -> str:
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        return response.choices[0].message.content or ""
+
+    def generate_json(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.3,
+        max_tokens: int = 2000,
+    ) -> dict:
+        # Add JSON instruction to system prompt
+        json_system = (
+            system_prompt
+            + "\n\nIMPORTANT: You must respond with valid JSON only, no other text."
+        )
+
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": json_system},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+        content = response.choices[0].message.content or "{}"
+
+        # Try to extract JSON if there's extra text
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            # Try to find JSON in the response
+            start = content.find("{")
+            end = content.rfind("}") + 1
+            if start != -1 and end > start:
+                return json.loads(content[start:end])
+            raise
+
+
 def get_llm_client(provider: str = "openai", **kwargs) -> BaseLLMClient:
     """Factory function to get an LLM client."""
     providers = {
         "openai": OpenAIClient,
         "anthropic": AnthropicClient,
+        "openrouter": OpenRouterClient,
     }
 
     if provider not in providers:

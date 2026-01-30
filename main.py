@@ -53,19 +53,29 @@ def run_interactive_interview():
     print_banner()
 
     # Check for API keys
-    if not os.getenv("OPENAI_API_KEY") and not os.getenv("ANTHROPIC_API_KEY"):
+    if not os.getenv("OPENAI_API_KEY") and not os.getenv("ANTHROPIC_API_KEY") and not os.getenv("OPENROUTER_API_KEY"):
         print("ERROR: No API key found!")
-        print("Please set OPENAI_API_KEY or ANTHROPIC_API_KEY environment variable.")
+        print("Please set one of the following environment variables:")
+        print("  - OPENAI_API_KEY")
+        print("  - ANTHROPIC_API_KEY")
+        print("  - OPENROUTER_API_KEY")
         print()
         print("Example:")
-        print("  export OPENAI_API_KEY=your-key-here")
-        print("  # or")
-        print("  export ANTHROPIC_API_KEY=your-key-here")
+        print("  export OPENROUTER_API_KEY=your-key-here")
+        print("  export OPENROUTER_MODEL=anthropic/claude-3.5-sonnet")
         sys.exit(1)
 
     # Determine which provider to use
-    provider = "openai" if os.getenv("OPENAI_API_KEY") else "anthropic"
-    print(f"Using {provider.upper()} as LLM provider")
+    if os.getenv("OPENROUTER_API_KEY"):
+        provider = "openrouter"
+        model = os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
+        print(f"Using OPENROUTER as LLM provider with model: {model}")
+    elif os.getenv("OPENAI_API_KEY"):
+        provider = "openai"
+        print(f"Using OPENAI as LLM provider")
+    else:
+        provider = "anthropic"
+        print(f"Using ANTHROPIC as LLM provider")
     print()
 
     # Get candidate info
@@ -174,7 +184,12 @@ def run_scripted_interview(script_file: str):
     print()
 
     # Determine provider
-    provider = "openai" if os.getenv("OPENAI_API_KEY") else "anthropic"
+    if os.getenv("OPENROUTER_API_KEY"):
+        provider = "openrouter"
+    elif os.getenv("OPENAI_API_KEY"):
+        provider = "openai"
+    else:
+        provider = "anthropic"
 
     # Initialize and run
     orchestrator = InterviewOrchestrator(llm_provider=provider, output_dir="logs")

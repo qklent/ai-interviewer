@@ -19,7 +19,8 @@ pip install -r requirements.txt
 
 # Configure environment
 cp .env.example .env
-# Add OPENAI_API_KEY or ANTHROPIC_API_KEY to .env
+# Add one of: OPENAI_API_KEY, ANTHROPIC_API_KEY, or OPENROUTER_API_KEY to .env
+# For OpenRouter, also set OPENROUTER_MODEL (optional, defaults to anthropic/claude-3.5-sonnet)
 ```
 
 ### Running the Application
@@ -84,7 +85,8 @@ Factory pattern for multi-provider support:
 - `BaseLLMClient` - Abstract interface with `generate()` and `generate_json()` methods
 - `OpenAIClient` - Uses `gpt-4o-mini` by default
 - `AnthropicClient` - Uses `claude-3-5-sonnet-20241022` by default
-- Provider auto-selected based on available API key
+- `OpenRouterClient` - Uses `anthropic/claude-3.5-sonnet` by default, supports any OpenRouter model
+- Provider auto-selected based on available API key (priority: OpenRouter → OpenAI → Anthropic)
 
 ### Data Models (`src/core/models.py`)
 Structured with dataclasses:
