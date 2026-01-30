@@ -33,7 +33,7 @@ from src.core.llm_client import get_llm_client
 from src.agents.observer import ObserverAgent
 from src.agents.interviewer import InterviewerAgent
 from src.agents.feedback_generator import FeedbackGeneratorAgent
-from src.core.models import CandidateInfo, ObserverAnalysis
+from src.core.models import CandidateInfo, ObserverAnalysis, Grade
 from src.utils.prompt_loader import load_prompt
 
 
@@ -148,6 +148,29 @@ def load_evaluator_prompt(agent_name: str) -> str:
         raise FileNotFoundError(f"Evaluator prompt not found: {prompt_path}")
 
     return prompt_path.read_text()
+
+
+def convert_grade_string_to_enum(grade_str: str) -> Grade:
+    """Convert a grade string to Grade enum, handling various formats."""
+    grade_str = grade_str.strip()
+
+    # Try exact match first
+    for grade in Grade:
+        if grade.value == grade_str:
+            return grade
+
+    # Try case-insensitive match
+    grade_upper = grade_str.upper()
+    if grade_upper == "JUNIOR":
+        return Grade.JUNIOR
+    elif grade_upper == "MIDDLE":
+        return Grade.MIDDLE
+    elif grade_upper == "SENIOR":
+        return Grade.SENIOR
+
+    # Default to Middle if unknown
+    print(f"Warning: Unknown grade '{grade_str}', defaulting to Middle")
+    return Grade.MIDDLE
 
 
 def get_prompt_content(
@@ -380,7 +403,7 @@ def evaluate_observer_agent(
     candidate_info = CandidateInfo(
         name="Test Candidate",
         position="Software Engineer",
-        target_grade="Middle",
+        target_grade=Grade.MIDDLE,  # Observer doesn't really use this
         experience="N/A",
     )
 
@@ -473,7 +496,7 @@ def evaluate_interviewer_agent(
         candidate_info = CandidateInfo(
             name="Test Candidate",
             position=item["input"]["position"],
-            target_grade=item["input"]["grade"],
+            target_grade=convert_grade_string_to_enum(item["input"]["grade"]),
             experience="N/A",
         )
 
@@ -619,7 +642,7 @@ def evaluate_feedback_generator_agent(
     candidate_info = CandidateInfo(
         name="Test Candidate",
         position=item["input"]["position"],
-        target_grade=item["input"]["target_grade"],
+        target_grade=convert_grade_string_to_enum(item["input"]["target_grade"]),
         experience="N/A",
     )
 
@@ -842,10 +865,10 @@ def run_evaluation(
             # Run task
             print(f"  → Running {agent_name} agent...")
             output = task_fn(item)
-            print(f"  ✓ Agent execution complete")
+            print("  ✓ Agent execution complete")
 
             # Run evaluator
-            print(f"  → Running LLM-as-judge evaluator...")
+            print("  → Running LLM-as-judge evaluator...")
             evaluation = evaluator(
                 input=item.input,
                 output=output,
@@ -862,7 +885,7 @@ def run_evaluation(
         except Exception as e:
             import traceback
             print(f"  ✗ Error on test case {i + 1}: {e}")
-            print(f"  ✗ Traceback:")
+            print("  ✗ Traceback:")
             traceback.print_exc()
             results.append({
                 "test_case": i + 1,
