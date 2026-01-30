@@ -377,10 +377,14 @@ class OpenRouterClient(BaseLLMClient):
             # Add schema to user prompt
             enhanced_user_prompt = f"""{user_prompt}
 
-IMPORTANT: Respond with a JSON object that follows this exact schema:
+IMPORTANT: Respond with ONLY a JSON data instance that matches this schema structure.
+Do NOT include the schema definition itself in your response.
+
+Schema for reference:
 {schema_str}
 
-Make sure to include ALL required fields in your response."""
+Your response must be a valid JSON object containing the actual data values for the required fields listed in the schema.
+Example: If the schema requires a "response" field of type string, return {{"response": "your actual text here"}}, NOT the schema definition."""
 
             # Use generate_json and then validate with Pydantic
             json_result = self.generate_json(

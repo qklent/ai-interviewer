@@ -375,6 +375,7 @@ Conversation history:
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         response_format=IntervieweeResponseModel,
+        max_tokens=4000,  # Increased for longer Russian text responses
     )
 
     return result.response
@@ -444,6 +445,7 @@ Generate your response:"""
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         response_format=InterviewerResponseModel,
+        max_tokens=4000,  # Increased for longer Russian text responses
     )
 
     return result.response
@@ -523,6 +525,7 @@ Generate final feedback:"""
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         response_format=FinalFeedbackPydantic,
+        max_tokens=4000,  # Increased for comprehensive feedback generation
     )
 
     return {
