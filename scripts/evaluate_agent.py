@@ -169,7 +169,8 @@ def get_prompt_content(
 
     try:
         if version == "latest":
-            prompt = langfuse.get_prompt(prompt_name)
+            # Explicitly use "latest" label instead of default "production"
+            prompt = langfuse.get_prompt(prompt_name, label="latest")
         else:
             prompt = langfuse.get_prompt(prompt_name, version=int(version))
 
@@ -621,15 +622,16 @@ def evaluate_feedback_generator_agent(
     conversation_history = transform_conversation_history(raw_conversation_history)
 
     # Generate feedback (no longer needs observer_analyses parameter)
-    feedback, internal = feedback_gen.generate_feedback(
+    feedback, _ = feedback_gen.generate_feedback(
         candidate_info=candidate_info,
         conversation_history=conversation_history,
     )
 
     # Convert to dict (map actual model fields to dataset format)
+    # Note: Grade and HiringRecommendation are str enums, so we can convert them directly to str
     return {
-        "verdict": feedback.hiring_recommendation.value if hasattr(feedback.hiring_recommendation, 'value') else str(feedback.hiring_recommendation),
-        "assessed_grade": feedback.assessed_grade.value if hasattr(feedback.assessed_grade, 'value') else str(feedback.assessed_grade),
+        "verdict": str(feedback.hiring_recommendation),
+        "assessed_grade": str(feedback.assessed_grade),
         "grade_reasoning": f"Confidence: {feedback.confidence_score}%",
         "confirmed_skills": [{"topic": s.topic, "status": s.status, "details": s.details} for s in feedback.confirmed_skills],
         "knowledge_gaps": [{"topic": s.topic, "status": s.status, "details": s.details} for s in feedback.knowledge_gaps],
@@ -646,13 +648,13 @@ def evaluate_feedback_generator_agent(
     }
 
 
-def create_feedback_generator_evaluator(langfuse: Langfuse):
+def create_feedback_generator_evaluator(langfuse: Langfuse):  # noqa: ARG001
     """Create LLM-as-a-judge evaluator for FeedbackGeneratorAgent."""
     evaluator_prompt = load_evaluator_prompt("feedback_generator")
     llm_client = get_llm_client()
 
     def feedback_evaluator(
-        *, input: Dict, output: Dict, expected_output: Dict, **kwargs
+        *, input: Dict, output: Dict, expected_output: Dict, **kwargs  # noqa: ARG001
     ) -> Evaluation:
         """Evaluate FeedbackGeneratorAgent output using LLM-as-judge."""
 
@@ -776,18 +778,23 @@ def run_evaluation(
         return
 
     # Select task and evaluator based on agent
+    def observer_task(item):
+        return evaluate_observer_agent(item, langfuse, prompt_version)
+
+    def interviewer_task(item):
+        return evaluate_interviewer_agent(item, langfuse, prompt_version)
+
+    def feedback_generator_task(item):
+        return evaluate_feedback_generator_agent(item, langfuse, prompt_version)
+
     if agent_name == "observer":
-        task_fn = lambda item: evaluate_observer_agent(item, langfuse, prompt_version)
+        task_fn = observer_task
         evaluator = create_observer_evaluator(langfuse)
     elif agent_name == "interviewer":
-        task_fn = lambda item: evaluate_interviewer_agent(
-            item, langfuse, prompt_version
-        )
+        task_fn = interviewer_task
         evaluator = create_interviewer_evaluator(langfuse)
     elif agent_name == "feedback_generator":
-        task_fn = lambda item: evaluate_feedback_generator_agent(
-            item, langfuse, prompt_version
-        )
+        task_fn = feedback_generator_task
         evaluator = create_feedback_generator_evaluator(langfuse)
     else:
         raise ValueError(f"Unknown agent: {agent_name}")
