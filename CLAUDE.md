@@ -21,6 +21,7 @@ pip install -r requirements.txt
 cp .env.example .env
 # Add one of: OPENAI_API_KEY, ANTHROPIC_API_KEY, or OPENROUTER_API_KEY to .env
 # For OpenRouter, also set OPENROUTER_MODEL (optional, defaults to anthropic/claude-3.5-sonnet)
+# Optionally add Langfuse credentials for tracing: LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_HOST
 ```
 
 ### Running the Application
@@ -95,11 +96,23 @@ Structured with dataclasses:
 - `FinalFeedback` - Verdict, skills assessment, soft skills, roadmap
 - `InterviewSession` - Complete log with turns and feedback
 
-### Logging (`src/utils/logger.py`)
+### Utilities
+
+**Logging** (`src/utils/logger.py`)
 Saves complete interview transcripts to `logs/` as JSON files including:
 - Candidate metadata
 - All conversation turns with visible and internal messages
 - Final feedback with structured assessment
+
+**Tracing** (`src/utils/tracing.py`)
+Optional Langfuse integration for observability:
+- Initializes Langfuse client with credentials from environment variables
+- Provides `@observe` decorator for function tracing
+- Falls back gracefully if credentials not configured
+- Helps monitor agent behavior and performance
+
+**Prompt Loader** (`src/utils/prompt_loader.py`)
+Utility for loading and managing system prompts for agents
 
 ## Key Design Principles
 
@@ -116,7 +129,13 @@ Observer is specifically trained to detect false technical claims (e.g., "Python
 Observer maintains a list of covered topics. Interviewer explicitly avoids asking about topics already thoroughly discussed.
 
 ### Stop Commands
-Interview ends when candidate says stop phrases (detected via regex in `orchestrator.py:122-132`), triggering feedback generation.
+Interview ends when candidate says stop phrases (detected via regex in `orchestrator.py:148-155`), triggering feedback generation. Supported patterns:
+- `стоп (игра|интервью)?` - Russian: "stop (game|interview)?"
+- `stop (game|interview)?` - English equivalent
+- `давай фидбэк` - Russian: "give feedback"
+- `give feedback` - English equivalent
+- `завершить` - Russian: "finish/end"
+- `end interview` - English equivalent
 
 ## Script File Format
 
