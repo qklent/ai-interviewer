@@ -12,6 +12,7 @@ Usage:
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import List, Dict
@@ -19,8 +20,11 @@ from typing import List, Dict
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from langfuse import Langfuse
-from src.core.llm_client import create_llm_client
+from src.core.llm_client import get_llm_client
 
 
 def parse_args():
@@ -75,7 +79,23 @@ def generate_test_cases(agent_name: str, num_cases: int) -> List[Dict]:
     Returns:
         List of test case dictionaries
     """
-    llm_client = create_llm_client()
+    # Determine which provider to use (same logic as main.py)
+    if os.getenv("OPENROUTER_API_KEY"):
+        provider = "openrouter"
+        model = os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
+        llm_client = get_llm_client(provider, model=model)
+    elif os.getenv("OPENAI_API_KEY"):
+        provider = "openai"
+        llm_client = get_llm_client(provider)
+    elif os.getenv("ANTHROPIC_API_KEY"):
+        provider = "anthropic"
+        llm_client = get_llm_client(provider)
+    else:
+        raise ValueError(
+            "No API key found! Please set one of: "
+            "OPENAI_API_KEY, ANTHROPIC_API_KEY, or OPENROUTER_API_KEY"
+        )
+
     generator_prompt = load_generator_prompt(agent_name, num_cases)
 
     print(f"Generating {num_cases} test cases for {agent_name}...")
@@ -83,7 +103,9 @@ def generate_test_cases(agent_name: str, num_cases: int) -> List[Dict]:
 
     try:
         # Generate cases as JSON
-        result = llm_client.generate_json(generator_prompt)
+        # The generator_prompt is the system prompt, we need a user prompt too
+        user_prompt = "Generate the test cases as specified in the instructions. Return them as a JSON object with a 'test_cases' key containing an array of test cases."
+        result = llm_client.generate_json(generator_prompt, user_prompt)
 
         # The result should be a list of test cases
         if isinstance(result, list):
