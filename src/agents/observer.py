@@ -2,10 +2,11 @@
 
 from typing import Optional
 
-from langfuse import observe, langfuse_context
+from langfuse import observe, get_client
 from src.core.llm_client import BaseLLMClient
 from src.core.models import ObserverAnalysis, CandidateInfo, Grade
 from src.utils.prompt_loader import load_prompt
+from src.utils.tracing import is_tracing_enabled
 
 
 # Load prompts from files
@@ -85,8 +86,9 @@ class ObserverAgent:
         )
 
         # Capture analysis metadata for observability
-        if analysis:
-            langfuse_context.update_current_observation(
+        if analysis and is_tracing_enabled():
+            langfuse = get_client()
+            langfuse.update_current_span(
                 metadata={
                     "quality": analysis.answer_quality,
                     "hallucination": analysis.hallucination_detected,

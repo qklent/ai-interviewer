@@ -34,7 +34,7 @@ Langfuse tracing utilities for interview observability.
 import os
 from typing import Optional
 from langfuse import Langfuse
-from langfuse import observe, langfuse_context
+from langfuse import observe, get_client
 
 # Initialize Langfuse client (will be None if credentials not provided)
 _langfuse_client: Optional[Langfuse] = None
@@ -126,7 +126,7 @@ def generate_json(self, system_prompt: str, user_message: str, response_model, t
 
 #### 3a. Add imports at the top:
 ```python
-from langfuse import observe, langfuse_context
+from langfuse import observe, get_client
 from src.utils.tracing import initialize_langfuse, is_tracing_enabled
 ```
 
@@ -163,7 +163,8 @@ def run_interview(self, candidate_responses: Optional[list[str]] = None) -> Inte
 ```python
 # Track session metadata in Langfuse
 if is_tracing_enabled():
-    langfuse_context.update_current_trace(
+    langfuse = get_client()
+    langfuse.update_current_span(
         name=f"Interview: {self.candidate_info.name}",
         user_id=self.candidate_info.name,
         metadata={
@@ -184,7 +185,8 @@ Find the end of `run_interview` method (around line 134, before the return state
 ```python
 # Update trace with final results
 if is_tracing_enabled() and final_feedback:
-    langfuse_context.update_current_observation(
+    langfuse = get_client()
+    langfuse.update_current_span(
         output={
             "verdict": final_feedback.verdict,
             "grade": final_feedback.grade,
@@ -246,7 +248,8 @@ def analyze_response(self, candidate_response: str) -> ObserverAnalysis:
 # Capture analysis metadata for observability
 if analysis:
     from langfuse import langfuse_context
-    langfuse_context.update_current_observation(
+    langfuse = get_client()
+    langfuse.update_current_span(
         metadata={
             "quality": analysis.answer_quality,
             "hallucination": analysis.hallucination_detected,

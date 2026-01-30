@@ -3,7 +3,7 @@
 import re
 from typing import Optional
 
-from langfuse import observe, langfuse_context
+from langfuse import observe, get_client
 from src.core.llm_client import BaseLLMClient, get_llm_client
 from src.core.models import CandidateInfo, Grade, FinalFeedback
 from src.agents.interviewer import InterviewerAgent
@@ -74,7 +74,8 @@ class InterviewOrchestrator:
         """
         # Track session metadata in Langfuse
         if is_tracing_enabled():
-            langfuse_context.update_current_trace(
+            langfuse = get_client()
+            langfuse.update_current_span(
                 name=f"Interview: {name}",
                 user_id=name,
                 metadata={
@@ -256,7 +257,8 @@ class InterviewOrchestrator:
 
         # Update trace with final results
         if is_tracing_enabled() and feedback:
-            langfuse_context.update_current_observation(
+            langfuse = get_client()
+            langfuse.update_current_span(
                 output={
                     "verdict": feedback.verdict,
                     "grade": feedback.grade.value

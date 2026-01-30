@@ -5,7 +5,7 @@ Langfuse tracing utilities for interview observability.
 import os
 from typing import Optional
 from langfuse import Langfuse
-from langfuse import observe, langfuse_context
+from langfuse import observe
 
 # Initialize Langfuse client (will be None if credentials not provided)
 _langfuse_client: Optional[Langfuse] = None
