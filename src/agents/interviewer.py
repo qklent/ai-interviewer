@@ -1,6 +1,7 @@
 """Interviewer Agent - conducts the technical interview."""
 from typing import Optional
 
+from langfuse.decorators import observe
 from src.core.llm_client import BaseLLMClient
 from src.core.models import (
     InterviewerDecision,
@@ -25,6 +26,7 @@ class InterviewerAgent:
         self.current_difficulty = "medium"
         self.questions_asked: list[str] = []
 
+    @observe(name="generate_greeting")
     def generate_greeting(self, candidate_info: CandidateInfo) -> tuple[str, str]:
         """Generate an opening greeting for the interview.
 
@@ -49,6 +51,7 @@ class InterviewerAgent:
 
         return greeting, f"[Interviewer]: {rationale}"
 
+    @observe(name="generate_interviewer_response")
     def generate_response(
         self,
         candidate_info: CandidateInfo,
@@ -125,6 +128,7 @@ class InterviewerAgent:
 
         return message, internal_thoughts
 
+    @observe(name="generate_first_question")
     def generate_first_question(
         self,
         candidate_info: CandidateInfo,

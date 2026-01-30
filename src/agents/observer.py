@@ -1,6 +1,7 @@
 """Observer Agent - analyzes candidate responses and guides the Interviewer."""
 from typing import Optional
 
+from langfuse.decorators import observe, langfuse_context
 from src.core.llm_client import BaseLLMClient
 from src.core.models import ObserverAnalysis, CandidateInfo, Grade
 from src.utils.prompt_loader import load_prompt
@@ -18,6 +19,7 @@ class ObserverAgent:
         self.llm = llm_client
         self.topics_covered: list[str] = []
 
+    @observe(name="analyze_candidate_response")
     def analyze_response(
         self,
         candidate_info: CandidateInfo,
@@ -76,6 +78,18 @@ class ObserverAgent:
             difficulty_adjustment=response.get("difficulty_adjustment", "maintain"),
             topics_covered=self.topics_covered.copy(),
         )
+
+        # Capture analysis metadata for observability
+        if analysis:
+            langfuse_context.update_current_observation(
+                metadata={
+                    "quality": analysis.answer_quality,
+                    "hallucination": analysis.hallucination_detected,
+                    "recommended_action": analysis.recommended_action,
+                    "difficulty_adjustment": analysis.difficulty_adjustment,
+                    "off_topic": analysis.off_topic
+                }
+            )
 
         return analysis
 

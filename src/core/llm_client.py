@@ -3,11 +3,13 @@ import os
 import json
 from abc import ABC, abstractmethod
 from typing import Optional
+from langfuse.decorators import observe
 
 
 class BaseLLMClient(ABC):
     """Abstract base class for LLM clients."""
 
+    @observe(as_type="generation")
     @abstractmethod
     def generate(
         self,
@@ -19,6 +21,7 @@ class BaseLLMClient(ABC):
         """Generate a response from the LLM."""
         pass
 
+    @observe(as_type="generation")
     @abstractmethod
     def generate_json(
         self,

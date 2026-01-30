@@ -1,6 +1,7 @@
 """Feedback Generator Agent - creates comprehensive final feedback."""
 from typing import Optional
 
+from langfuse.decorators import observe
 from src.core.llm_client import BaseLLMClient
 from src.core.models import (
     FinalFeedback,
@@ -24,6 +25,7 @@ class FeedbackGeneratorAgent:
     def __init__(self, llm_client: BaseLLMClient):
         self.llm = llm_client
 
+    @observe(name="generate_final_feedback")
     def generate_feedback(
         self,
         candidate_info: CandidateInfo,
