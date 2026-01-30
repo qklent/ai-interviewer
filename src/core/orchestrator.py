@@ -1,5 +1,6 @@
 """Interview Orchestrator - coordinates agents and manages interview flow."""
 
+import os
 import re
 import uuid
 from datetime import datetime
@@ -48,7 +49,24 @@ class InterviewOrchestrator:
             # Initialize agents
             self.interviewer = InterviewerAgent(self.llm)
             self.observer = ObserverAgent(self.llm)
-            self.feedback_generator = FeedbackGeneratorAgent(self.llm)
+
+            # Initialize feedback generator based on mode
+            feedback_mode = os.getenv("FEEDBACK_MODE", "single_model")
+            logger.info(f"Feedback mode: {feedback_mode}")
+
+            if feedback_mode == "multi_model":
+                from src.agents.multi_model_feedback_generator import MultiModelFeedbackGenerator
+                self.feedback_generator = MultiModelFeedbackGenerator(
+                    google_model=os.getenv("FEEDBACK_MODEL_GOOGLE", "google/gemini-2.0-flash-thinking-exp-1219"),
+                    anthropic_model=os.getenv("FEEDBACK_MODEL_ANTHROPIC", "anthropic/claude-3.5-sonnet"),
+                    openai_model=os.getenv("FEEDBACK_MODEL_OPENAI", "openai/gpt-4o"),
+                    save_intermediate=os.getenv("SAVE_INTERMEDIATE_FEEDBACK", "true").lower() == "true",
+                )
+                logger.info("Initialized MultiModelFeedbackGenerator")
+            else:
+                self.feedback_generator = FeedbackGeneratorAgent(self.llm)
+                logger.info("Initialized single-model FeedbackGeneratorAgent")
+
             logger.info("All agents initialized successfully")
 
             # Initialize logger
@@ -339,10 +357,21 @@ class InterviewOrchestrator:
             # Generate feedback
             logger.debug("Generating final feedback...")
             history = self.logger.get_conversation_history()
-            feedback, formatted_feedback = self.feedback_generator.generate_feedback(
+            result = self.feedback_generator.generate_feedback(
                 self.candidate_info,
                 history,
             )
+
+            # Handle both single-model (2-tuple) and multi-model (3-tuple) returns
+            if isinstance(result, tuple) and len(result) == 3:
+                feedback, formatted_feedback, intermediate = result
+                if intermediate:
+                    logger.debug("Storing intermediate feedbacks from multi-model generation")
+                    self.logger.set_intermediate_feedbacks(intermediate)
+            else:
+                feedback, formatted_feedback = result
+                intermediate = None
+
             logger.debug("Final feedback generated successfully")
 
             # Set feedback in logger

@@ -88,6 +88,7 @@ class InterviewSession:
     final_feedback: Optional[FinalFeedback] = None
     started_at: str = field(default_factory=lambda: datetime.now().isoformat())
     ended_at: Optional[str] = None
+    intermediate_feedbacks: Optional[dict] = None  # For multi-model feedback
 
 
 @dataclass

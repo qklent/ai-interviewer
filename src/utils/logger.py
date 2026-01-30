@@ -68,6 +68,12 @@ class InterviewLogger:
         self.session.final_feedback = feedback
         self.session.ended_at = datetime.now().isoformat()
 
+    def set_intermediate_feedbacks(self, intermediate: dict) -> None:
+        """Store intermediate feedback results from multi-model generation."""
+        if self.session is None:
+            raise ValueError("Session not started. Call start_session() first.")
+        self.session.intermediate_feedbacks = intermediate
+
     def _serialize_feedback(self, feedback: FinalFeedback) -> dict:
         """Serialize FinalFeedback to a dictionary."""
         result = {
@@ -153,6 +159,7 @@ class InterviewLogger:
                 if self.session.final_feedback
                 else None
             ),
+            "intermediate_feedbacks": self.session.intermediate_feedbacks,
         }
 
         with open(filepath, "w", encoding="utf-8") as f:

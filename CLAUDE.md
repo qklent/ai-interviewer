@@ -63,6 +63,8 @@ python scripts/upload_prompts_to_langfuse.py
 - `observer_analysis` - Template for response analysis
 - `feedback_generator_system` - System prompt for feedback generator
 - `feedback_generator_feedback` - Template for final feedback
+- `feedback_generator_aggregate_system` - System prompt for multi-model feedback aggregation
+- `feedback_generator_aggregate_feedback` - Template for aggregating multiple feedback evaluations
 
 ## Multi-Agent Architecture
 
@@ -89,6 +91,14 @@ The system implements a **hidden reflection** pattern where agents communicate i
    - Provides technical review with confirmed skills and gaps
    - Evaluates soft skills (clarity, honesty, engagement)
    - Creates personalized learning roadmap
+
+4. **MultiModelFeedbackGenerator** (`src/agents/multi_model_feedback_generator.py`) - Multi-model feedback (optional)
+   - Uses three different LLMs for reduced bias and improved evaluation quality
+   - Model 1 (Google): Independent evaluation
+   - Model 2 (Anthropic): Independent evaluation
+   - Model 3 (OpenAI): Aggregates both into final synthesis
+   - Configurable via `FEEDBACK_MODE=multi_model` environment variable
+   - Fallback to single-model on failures
 
 ### Communication Pattern
 On each turn:
@@ -192,3 +202,79 @@ Second candidate response
 ```
 
 Lines before `---` are metadata (key: value format). Lines after are candidate responses (one per line).
+
+## Multi-Model Feedback Generation
+
+The system supports an optional multi-model feedback generation mode that reduces bias and improves evaluation quality by using three different LLMs from different providers.
+
+### Architecture
+
+Following LLM-as-a-judge best practices:
+
+1. **Model 1 (Google Gemini)** - Generates independent feedback evaluation
+2. **Model 2 (Anthropic Claude)** - Generates independent feedback evaluation
+3. **Model 3 (OpenAI GPT-4)** - Aggregates both feedbacks into final synthesis
+
+This approach leverages diverse model perspectives while minimizing model-specific biases.
+
+### Configuration
+
+Enable multi-model mode by setting environment variables in `.env`:
+
+```bash
+# Enable multi-model feedback generation
+FEEDBACK_MODE=multi_model
+
+# Configure models (defaults shown)
+FEEDBACK_MODEL_GOOGLE=google/gemini-2.0-flash-thinking-exp-1219
+FEEDBACK_MODEL_ANTHROPIC=anthropic/claude-3.5-sonnet
+FEEDBACK_MODEL_OPENAI=openai/gpt-4o
+
+# Optional: Save intermediate feedbacks to logs for analysis
+SAVE_INTERMEDIATE_FEEDBACK=true
+
+# Optional: Fallback behavior when one model fails
+# Options: partial (use successful one), fail (raise error), single_model (use default)
+MULTIMODEL_FALLBACK_MODE=partial
+```
+
+### How It Works
+
+**Stage 1 & 2: Independent Evaluations**
+- Google and Anthropic models evaluate the interview independently
+- Both use the same `FeedbackGeneratorAgent` with different LLM clients
+- No communication between models (eliminates anchoring bias)
+
+**Stage 3: Meta-Evaluation**
+- OpenAI model receives both independent evaluations
+- Identifies areas of consensus (high confidence signal)
+- Analyzes areas of divergence (makes reasoned final decisions)
+- Synthesizes into unified, balanced assessment
+
+**Error Handling:**
+- If both Models 1 & 2 fail: Falls back to single-model approach
+- If one model fails: Uses successful evaluation (skips aggregation)
+- If aggregation fails: Falls back to Anthropic evaluation
+- Configurable fallback modes via `MULTIMODEL_FALLBACK_MODE`
+
+### Benefits
+
+- **Reduced Bias:** Multiple models minimize individual model biases
+- **Improved Quality:** Diverse perspectives provide more balanced assessments
+- **Higher Confidence:** Agreement between models strengthens evaluation confidence
+- **Better Coverage:** Each model may catch issues the other misses
+
+### Cost Considerations
+
+Multi-model mode uses 3 API calls vs 1, resulting in approximately:
+- **Cost multiplier:** ~3x ($0.16 vs $0.05 per feedback)
+- **Latency:** Sequential execution (parallel execution possible as future optimization)
+
+Enable selectively for high-stakes interviews where evaluation quality is critical.
+
+### Backward Compatibility
+
+The system maintains full backward compatibility:
+- Default mode (`FEEDBACK_MODE=single_model`) works exactly as before
+- No breaking changes to existing code or APIs
+- Easy rollback by changing environment variable

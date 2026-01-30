@@ -1,0 +1,35 @@
+Synthesize these two independent evaluations into a single comprehensive assessment.
+
+## CANDIDATE INFORMATION
+
+- **Name:** {name}
+- **Position:** {position}
+- **Target Grade:** {target_grade}
+- **Experience:** {experience}
+
+## EVALUATOR 1 (Google Gemini) ASSESSMENT
+
+{feedback_1}
+
+## EVALUATOR 2 (Anthropic Claude) ASSESSMENT
+
+{feedback_2}
+
+## YOUR TASK
+
+Analyze both evaluations carefully and create a unified assessment that:
+
+1. **Highlights Consensus** - Where both models agree, emphasize this as strong evidence
+2. **Resolves Divergence** - Where they disagree, make a reasoned final decision with brief explanation
+3. **Preserves Insights** - Include valuable observations from both models
+4. **Provides Clarity** - Deliver clear, actionable feedback to the candidate
+
+**Specific Instructions:**
+
+- **Assessed Grade & Hiring Recommendation:** If models disagree, explain why you chose one over the other
+- **Confirmed Skills:** Include skills identified by either model with supporting evidence
+- **Knowledge Gaps:** Prioritize gaps identified by both models; include unique gaps if well-evidenced
+- **Soft Skills Scores:** When scores differ, use your judgment based on evidence quality (do not simply average)
+- **Roadmap:** Combine recommendations from both models, prioritizing most actionable items
+
+Generate the structured output in the required JSON format with all required fields.
