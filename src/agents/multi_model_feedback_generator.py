@@ -142,7 +142,15 @@ class MultiModelFeedbackGenerator:
             )
             logger.info("Google feedback generated successfully")
         except Exception as e:
-            logger.error(f"Google feedback generation failed: {e}", exc_info=True)
+            logger.error(
+                f"Google feedback generation failed: {e}",
+                exc_info=True,
+                extra={
+                    "model": "google",
+                    "candidate": candidate_info.name,
+                    "error_type": type(e).__name__,
+                },
+            )
 
         # Generate Anthropic feedback (Model 2)
         try:
@@ -152,7 +160,15 @@ class MultiModelFeedbackGenerator:
             )
             logger.info("Anthropic feedback generated successfully")
         except Exception as e:
-            logger.error(f"Anthropic feedback generation failed: {e}", exc_info=True)
+            logger.error(
+                f"Anthropic feedback generation failed: {e}",
+                exc_info=True,
+                extra={
+                    "model": "anthropic",
+                    "candidate": candidate_info.name,
+                    "error_type": type(e).__name__,
+                },
+            )
 
         return feedback_1, formatted_1, feedback_2, formatted_2
 

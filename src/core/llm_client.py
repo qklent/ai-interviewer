@@ -264,7 +264,32 @@ class OpenRouterClient(BaseLLMClient):
                     response_format={"type": "json_object"},
                 )
 
-                content = response.choices[0].message.content or "{}"
+                # Check response validity
+                if not response.choices or len(response.choices) == 0:
+                    logger.error(f"No choices in response from OpenRouter (model={self.model})")
+                    logger.error(f"Full response: {response}")
+                    raise ValueError("Empty response from OpenRouter API")
+
+                message = response.choices[0].message
+                finish_reason = response.choices[0].finish_reason
+
+                # Log finish reason if not 'stop'
+                if finish_reason != "stop":
+                    logger.warning(
+                        f"Unusual finish_reason: {finish_reason} (model={self.model}). "
+                        f"This may indicate truncation or filtering."
+                    )
+
+                content = message.content or "{}"
+
+                # Log if content is empty or suspicious
+                if not content or not content.strip():
+                    logger.error(f"Empty content received from OpenRouter (model={self.model})")
+                    logger.error(f"Finish reason: {finish_reason}")
+                    logger.error(f"Message object: {message}")
+                    logger.error(f"Full response: {response}")
+                    content = "{}"  # Force to valid empty JSON
+
                 result = self._parse_json_with_retry(content)
 
                 logger.debug(f"OpenRouter JSON response received with {len(result)} keys")
@@ -276,6 +301,9 @@ class OpenRouterClient(BaseLLMClient):
 
         except json.JSONDecodeError as e:
             logger.exception(f"Failed to parse JSON from OpenRouter response: {e}")
+            logger.error(f"Content that failed to parse (first 500 chars): {content[:500] if 'content' in locals() else 'N/A'}")
+            logger.error(f"Content length: {len(content) if 'content' in locals() else 'N/A'}")
+            logger.error(f"Content repr: {repr(content) if 'content' in locals() else 'N/A'}")
             raise
         except Exception as e:
             logger.exception(f"OpenRouter API call failed: {e}")
