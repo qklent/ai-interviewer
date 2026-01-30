@@ -391,10 +391,22 @@ class AnthropicClient(BaseLLMClient):
         """
         logger.debug(f"Anthropic generate_structured: model={self.model}, response_format={response_format.__name__}")
 
+        # Get JSON schema from Pydantic model
+        schema = response_format.model_json_schema()
+        schema_str = json.dumps(schema, indent=2)
+
+        # Add schema to user prompt
+        enhanced_user_prompt = f"""{user_prompt}
+
+IMPORTANT: Respond with a JSON object that follows this exact schema:
+{schema_str}
+
+Make sure to include ALL required fields in your response."""
+
         # Use generate_json and then validate with Pydantic
         json_result = self.generate_json(
             system_prompt=system_prompt,
-            user_prompt=user_prompt,
+            user_prompt=enhanced_user_prompt,
             temperature=temperature,
             max_tokens=max_tokens,
             prompt_metadata=prompt_metadata,
@@ -524,36 +536,58 @@ class OpenRouterClient(BaseLLMClient):
                     + "\n\nIMPORTANT: You must respond with valid JSON only, no other text."
                 )
 
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {"role": "system", "content": json_system},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                )
+                # Try to use JSON mode if supported by the model
+                try:
+                    response = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=[
+                            {"role": "system", "content": json_system},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        response_format={"type": "json_object"},
+                    )
+                except Exception as json_mode_error:
+                    # Fallback if model doesn't support JSON mode
+                    logger.debug(f"JSON mode not supported, falling back: {json_mode_error}")
+                    response = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=[
+                            {"role": "system", "content": json_system},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    )
 
                 content = response.choices[0].message.content or "{}"
 
                 # Try to extract JSON if there's extra text
                 try:
                     result = json.loads(content)
+                    logger.debug(f"OpenRouter JSON response received with {len(result)} keys")
                 except json.JSONDecodeError as e:
                     logger.debug(f"Response not pure JSON, extracting (error: {e})")
                     logger.debug(f"Raw content preview (first 500 chars): {content[:500]}")
-                    # Try to find JSON in the response
+
+                    # Try to find and parse the first complete JSON object
                     start = content.find("{")
-                    end = content.rfind("}") + 1
-                    if start != -1 and end > start:
-                        extracted = content[start:end]
-                        result = json.loads(extracted)
-                        logger.debug(f"JSON extraction successful (stripped {start} leading + {len(content) - end} trailing chars)")
-                    else:
-                        logger.error(f"Could not extract JSON from response: {content[:200]}")
+                    if start == -1:
+                        logger.error(f"No JSON object found in response: {content[:200]}")
                         raise
 
-                logger.debug(f"OpenRouter JSON response received with {len(result)} keys")
+                    # Use JSONDecoder to parse from the start position
+                    # This properly handles nested objects and stops at the right place
+                    try:
+                        decoder = json.JSONDecoder()
+                        result, end_idx = decoder.raw_decode(content, start)
+                        logger.debug(f"JSON extraction successful (stripped {start} leading + {len(content) - end_idx} trailing chars)")
+                        logger.debug(f"OpenRouter JSON response received with {len(result)} keys")
+                    except json.JSONDecodeError as e2:
+                        logger.error(f"Could not extract JSON from response: {e2}")
+                        logger.error(f"Content preview: {content[:500]}")
+                        raise
 
                 # Update the generation with output
                 generation.update(output=result)
@@ -583,11 +617,23 @@ class OpenRouterClient(BaseLLMClient):
         """
         logger.debug(f"OpenRouter generate_structured: model={self.model}, response_format={response_format.__name__}")
 
+        # Get JSON schema from Pydantic model
+        schema = response_format.model_json_schema()
+        schema_str = json.dumps(schema, indent=2)
+
+        # Add schema to user prompt
+        enhanced_user_prompt = f"""{user_prompt}
+
+IMPORTANT: Respond with a JSON object that follows this exact schema:
+{schema_str}
+
+Make sure to include ALL required fields in your response."""
+
         # Use generate_json and then validate with Pydantic
         # This is more reliable for OpenRouter than assuming parse() support
         json_result = self.generate_json(
             system_prompt=system_prompt,
-            user_prompt=user_prompt,
+            user_prompt=enhanced_user_prompt,
             temperature=temperature,
             max_tokens=max_tokens,
             prompt_metadata=prompt_metadata,
