@@ -530,40 +530,19 @@ class OpenRouterClient(BaseLLMClient):
                 name="llm-generation",
                 prompt=prompt
             ) as generation:
-                # Add JSON instruction to system prompt
-                json_system = (
-                    system_prompt
-                    + "\n\nIMPORTANT: You must respond with valid JSON only, no other text."
-                )
-
                 response = self.client.chat.completions.create(
                     model=self.model,
                     messages=[
-                        {"role": "system", "content": json_system},
+                        {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
                     ],
                     temperature=temperature,
                     max_tokens=max_tokens,
+                    response_format={"type": "json_object"},
                 )
 
                 content = response.choices[0].message.content or "{}"
-
-                # Try to extract JSON if there's extra text
-                try:
-                    result = json.loads(content)
-                except json.JSONDecodeError as e:
-                    logger.debug(f"Response not pure JSON, extracting (error: {e})")
-                    logger.debug(f"Raw content preview (first 500 chars): {content[:500]}")
-                    # Try to find JSON in the response
-                    start = content.find("{")
-                    end = content.rfind("}") + 1
-                    if start != -1 and end > start:
-                        extracted = content[start:end]
-                        result = json.loads(extracted)
-                        logger.debug(f"JSON extraction successful (stripped {start} leading + {len(content) - end} trailing chars)")
-                    else:
-                        logger.error(f"Could not extract JSON from response: {content[:200]}")
-                        raise
+                result = json.loads(content)
 
                 logger.debug(f"OpenRouter JSON response received with {len(result)} keys")
 
@@ -590,41 +569,82 @@ class OpenRouterClient(BaseLLMClient):
     ) -> T:
         """Generate structured output for OpenRouter.
 
-        OpenRouter supports OpenAI-compatible interface, but may not support
-        beta.chat.completions.parse. Fall back to generate_json + validation.
+        Tries to use OpenAI's parse() method first, falls back to json_object mode.
         """
         logger.debug(f"OpenRouter generate_structured: model={self.model}, response_format={response_format.__name__}")
 
-        # Get JSON schema from Pydantic model
-        schema = response_format.model_json_schema()
-        schema_str = json.dumps(schema, indent=2)
+        langfuse = get_client()
 
-        # Add schema to user prompt
-        enhanced_user_prompt = f"""{user_prompt}
+        # Fetch the prompt from Langfuse if metadata is available
+        prompt = None
+        if prompt_metadata:
+            try:
+                prompt = langfuse.get_prompt(
+                    prompt_metadata.name,
+                    version=prompt_metadata.version
+                )
+            except Exception:
+                pass
+
+        # Try using the beta parse API (like OpenAI)
+        try:
+            with langfuse.start_as_current_observation(
+                as_type="generation",
+                name="llm-generation",
+                prompt=prompt
+            ) as generation:
+                response = self.client.beta.chat.completions.parse(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    response_format=response_format,
+                )
+
+                parsed_output = response.choices[0].message.parsed
+
+                # Update the generation with output
+                generation.update(output=parsed_output.model_dump() if parsed_output else None)
+
+                logger.debug(f"Successfully used parse() API for {response_format.__name__}")
+                return parsed_output
+
+        except Exception as e:
+            # Parse API not supported, fall back to json_object mode with schema in prompt
+            logger.debug(f"Parse API failed ({e}), falling back to json_object mode")
+
+            # Get JSON schema from Pydantic model
+            schema = response_format.model_json_schema()
+            schema_str = json.dumps(schema, indent=2)
+
+            # Add schema to user prompt
+            enhanced_user_prompt = f"""{user_prompt}
 
 IMPORTANT: Respond with a JSON object that follows this exact schema:
 {schema_str}
 
 Make sure to include ALL required fields in your response."""
 
-        # Use generate_json and then validate with Pydantic
-        # This is more reliable for OpenRouter than assuming parse() support
-        json_result = self.generate_json(
-            system_prompt=system_prompt,
-            user_prompt=enhanced_user_prompt,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            prompt_metadata=prompt_metadata,
-        )
+            # Use generate_json and then validate with Pydantic
+            json_result = self.generate_json(
+                system_prompt=system_prompt,
+                user_prompt=enhanced_user_prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                prompt_metadata=prompt_metadata,
+            )
 
-        # Parse JSON into Pydantic model
-        try:
-            parsed_output = response_format.model_validate(json_result)
-            logger.debug(f"Successfully parsed response into {response_format.__name__}")
-            return parsed_output
-        except Exception as e:
-            logger.exception(f"Failed to parse response into {response_format.__name__}: {e}")
-            raise
+            # Parse JSON into Pydantic model
+            try:
+                parsed_output = response_format.model_validate(json_result)
+                logger.debug(f"Successfully parsed response into {response_format.__name__}")
+                return parsed_output
+            except Exception as validation_error:
+                logger.exception(f"Failed to parse response into {response_format.__name__}: {validation_error}")
+                raise
 
 
 def get_llm_client(provider: str = "openai", **kwargs) -> BaseLLMClient:
