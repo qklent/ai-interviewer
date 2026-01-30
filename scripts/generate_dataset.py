@@ -19,12 +19,13 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 from langfuse import Langfuse
@@ -36,8 +37,10 @@ from src.core.llm_client import get_llm_client
 # Pydantic Models for Structured Outputs
 # ============================================================================
 
+
 class TestCase(BaseModel):
     """Single test case for agent evaluation."""
+
     input: Dict
     expected_output: Optional[Dict] = None
     metadata: Optional[Dict] = Field(default_factory=dict)
@@ -45,11 +48,13 @@ class TestCase(BaseModel):
 
 class TestCasesList(BaseModel):
     """Wrapper for list of test cases."""
+
     test_cases: List[TestCase]
 
 
 class IntervieweeProfile(BaseModel):
     """Generated interviewee profile."""
+
     name: str
     position: str
     grade: str  # "Junior", "Middle", "Senior"
@@ -61,27 +66,39 @@ class IntervieweeProfile(BaseModel):
 
 class IntervieweeResponseModel(BaseModel):
     """Wrapper for interviewee response."""
+
     response: str
 
 
 class ObserverAnalysisPydantic(BaseModel):
     """Observer analysis in Pydantic format."""
+
     quality: str = Field(description="Answer quality: excellent/good/poor/off_topic")
     confidence: str = Field(description="Confidence level: high/medium/low")
-    has_hallucination: bool = Field(description="Whether false technical claims were detected")
-    hallucination_details: Optional[str] = Field(default=None, description="Explanation if has_hallucination is true")
-    recommended_action: str = Field(description="Recommended action: continue/increase_difficulty/decrease_difficulty/correct_gently/ask_clarifying_question")
+    has_hallucination: bool = Field(
+        description="Whether false technical claims were detected"
+    )
+    hallucination_details: Optional[str] = Field(
+        default=None, description="Explanation if has_hallucination is true"
+    )
+    recommended_action: str = Field(
+        description="Recommended action: continue/increase_difficulty/decrease_difficulty/correct_gently/ask_clarifying_question"
+    )
     reasoning: str = Field(description="Explanation of the assessment")
-    covered_topics: List[str] = Field(default_factory=list, description="Technical topics discussed in this response")
+    covered_topics: List[str] = Field(
+        default_factory=list, description="Technical topics discussed in this response"
+    )
 
 
 class InterviewerResponseModel(BaseModel):
     """Wrapper for interviewer response."""
+
     response: str
 
 
 class SkillAssessmentPydantic(BaseModel):
     """Assessment of a specific skill."""
+
     topic: str
     status: str  # "confirmed" or "gap"
     details: str
@@ -89,6 +106,7 @@ class SkillAssessmentPydantic(BaseModel):
 
 class SoftSkillsAssessmentPydantic(BaseModel):
     """Soft skills assessment."""
+
     clarity: int = Field(ge=1, le=10)
     clarity_notes: str
     honesty: int = Field(ge=1, le=10)
@@ -99,6 +117,7 @@ class SoftSkillsAssessmentPydantic(BaseModel):
 
 class FinalFeedbackPydantic(BaseModel):
     """Final feedback in Pydantic format."""
+
     verdict: str = Field(description="Hiring verdict: hire/maybe/no_hire")
     overall_grade: str = Field(description="Assessed grade level")
     technical_skills: Dict[str, List[str]] = Field(
@@ -109,14 +128,14 @@ class FinalFeedbackPydantic(BaseModel):
     )
     recommendation: str = Field(description="Hiring recommendation text")
     learning_roadmap: List[str] = Field(
-        default_factory=list,
-        description="Personalized learning suggestions"
+        default_factory=list, description="Personalized learning suggestions"
     )
 
 
 # ============================================================================
 # Command Line Parsing
 # ============================================================================
+
 
 def parse_args():
     """Parse command line arguments."""
@@ -127,32 +146,37 @@ def parse_args():
         "--mode",
         default="single-agent",
         choices=["single-agent", "full-session"],
-        help="Generation mode: single-agent for individual agent tests, full-session for complete interviews (default: single-agent)"
+        help="Generation mode: single-agent for individual agent tests, full-session for complete interviews (default: single-agent)",
     )
     parser.add_argument(
         "--agent-name",
-        choices=["observer", "interviewer", "feedback_generator", "interviewee_profile", "interviewee_response"],
-        help="Name of the agent to generate test cases for (required for single-agent mode)"
+        choices=[
+            "observer",
+            "interviewer",
+            "feedback_generator",
+            "interviewee_profile",
+            "interviewee_response",
+        ],
+        help="Name of the agent to generate test cases for (required for single-agent mode)",
     )
     parser.add_argument(
         "--num-cases",
         type=int,
         default=10,
-        help="Number of test cases or interview sessions to generate (default: 10)"
+        help="Number of test cases or interview sessions to generate (default: 10)",
     )
     parser.add_argument(
         "--turns-per-session",
         type=int,
         default=8,
-        help="Number of conversation turns per session (for full-session mode, default: 8)"
+        help="Number of conversation turns per session (for full-session mode, default: 8)",
     )
     parser.add_argument(
         "--dataset-name",
-        help="Custom dataset name (default: {agent_name}_evaluation or full_interview_sessions)"
+        help="Custom dataset name (default: {agent_name}_evaluation or full_interview_sessions)",
     )
     parser.add_argument(
-        "--output-file",
-        help="Save generated cases to JSON file (optional)"
+        "--output-file", help="Save generated cases to JSON file (optional)"
     )
 
     args = parser.parse_args()
@@ -166,7 +190,12 @@ def parse_args():
 
 def load_generator_prompt(agent_name: str, num_cases: int) -> str:
     """Load the dataset generator prompt for the agent."""
-    prompt_path = Path(__file__).parent.parent / "prompts" / "evaluation" / f"{agent_name}_dataset_generator.txt"
+    prompt_path = (
+        Path(__file__).parent.parent
+        / "prompts"
+        / "evaluation"
+        / f"{agent_name}_dataset_generator.txt"
+    )
 
     if not prompt_path.exists():
         raise FileNotFoundError(f"Generator prompt not found: {prompt_path}")
@@ -199,7 +228,7 @@ def generate_test_cases(agent_name: str, num_cases: int) -> List[Dict]:
         result = llm_client.generate_structured(
             system_prompt=generator_prompt,
             user_prompt=user_prompt,
-            response_format=TestCasesList
+            response_format=TestCasesList,
         )
 
         # Convert Pydantic models to dictionaries
@@ -234,8 +263,8 @@ def upload_to_langfuse(dataset_name: str, test_cases: List[Dict], agent_name: st
             metadata={
                 "agent": agent_name,
                 "num_cases": len(test_cases),
-                "generated": "true"
-            }
+                "generated": "true",
+            },
         )
         print(f"✓ Created dataset '{dataset_name}'")
     except Exception as e:
@@ -251,20 +280,24 @@ def upload_to_langfuse(dataset_name: str, test_cases: List[Dict], agent_name: st
                 input_data = test_case["input"]
             else:
                 # Otherwise, package all fields except expected_output as input
-                input_data = {k: v for k, v in test_case.items() if k != "expected_output"}
+                input_data = {
+                    k: v for k, v in test_case.items() if k != "expected_output"
+                }
 
             langfuse.create_dataset_item(
                 dataset_name=dataset_name,
                 input=input_data,
                 expected_output=test_case.get("expected_output"),
-                metadata=test_case.get("metadata", {})
+                metadata=test_case.get("metadata", {}),
             )
             success_count += 1
-            print(f"  ✓ Uploaded test case {i+1}/{len(test_cases)}")
+            print(f"  ✓ Uploaded test case {i + 1}/{len(test_cases)}")
         except Exception as e:
-            print(f"  ✗ Error uploading test case {i+1}: {e}")
+            print(f"  ✗ Error uploading test case {i + 1}: {e}")
 
-    print(f"\n✓ Successfully uploaded {success_count}/{len(test_cases)} test cases to Langfuse\n")
+    print(
+        f"\n✓ Successfully uploaded {success_count}/{len(test_cases)} test cases to Langfuse\n"
+    )
 
 
 def save_to_file(output_file: str, test_cases: List[Dict]):
@@ -292,7 +325,12 @@ def get_llm_client_instance():
 
 def generate_interviewee_profile(llm_client) -> Dict:
     """Generate a single interviewee profile using structured output."""
-    prompt_path = Path(__file__).parent.parent / "prompts" / "evaluation" / "interviewee_profile_generator.txt"
+    prompt_path = (
+        Path(__file__).parent.parent
+        / "prompts"
+        / "evaluation"
+        / "interviewee_profile_generator.txt"
+    )
 
     if not prompt_path.exists():
         raise FileNotFoundError(f"Generator prompt not found: {prompt_path}")
@@ -303,14 +341,21 @@ def generate_interviewee_profile(llm_client) -> Dict:
     profile = llm_client.generate_structured(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
-        response_format=IntervieweeProfile
+        response_format=IntervieweeProfile,
     )
     return profile.model_dump()
 
 
-def generate_interviewee_response(llm_client, profile: Dict, question: str, conversation_history: List[Dict]) -> str:
+def generate_interviewee_response(
+    llm_client, profile: Dict, question: str, conversation_history: List[Dict]
+) -> str:
     """Generate interviewee response based on profile and context using structured output."""
-    prompt_path = Path(__file__).parent.parent / "prompts" / "evaluation" / "interviewee_response_generator.txt"
+    prompt_path = (
+        Path(__file__).parent.parent
+        / "prompts"
+        / "evaluation"
+        / "interviewee_response_generator.txt"
+    )
 
     if not prompt_path.exists():
         raise FileNotFoundError(f"Generator prompt not found: {prompt_path}")
@@ -329,13 +374,15 @@ Conversation history:
     result = llm_client.generate_structured(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
-        response_format=IntervieweeResponseModel
+        response_format=IntervieweeResponseModel,
     )
 
     return result.response
 
 
-def generate_observer_analysis(llm_client, question: str, response: str, profile: Dict) -> Dict:
+def generate_observer_analysis(
+    llm_client, question: str, response: str, profile: Dict
+) -> Dict:
     """Generate observer analysis for a candidate response using structured output."""
     system_prompt = """You are an ObserverAgent that analyzes candidate responses in technical interviews.
 
@@ -353,14 +400,19 @@ Provide your analysis:"""
     result = llm_client.generate_structured(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
-        response_format=ObserverAnalysisPydantic
+        response_format=ObserverAnalysisPydantic,
     )
 
     return result.model_dump()
 
 
-def generate_interviewer_response(llm_client, profile: Dict, conversation_history: List[Dict],
-                                  observer_analysis: Dict, covered_topics: List[str]) -> str:
+def generate_interviewer_response(
+    llm_client,
+    profile: Dict,
+    conversation_history: List[Dict],
+    observer_analysis: Dict,
+    covered_topics: List[str],
+) -> str:
     """Generate interviewer's next question or response using structured output."""
     system_prompt = """You are an InterviewerAgent conducting a technical interview.
 
@@ -382,14 +434,14 @@ Conversation history:
 Observer's analysis of last response:
 {json.dumps(observer_analysis, indent=2)}
 
-Topics already covered: {', '.join(covered_topics) if covered_topics else 'None yet'}
+Topics already covered: {", ".join(covered_topics) if covered_topics else "None yet"}
 
 Generate your response:"""
 
     result = llm_client.generate_structured(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
-        response_format=InterviewerResponseModel
+        response_format=InterviewerResponseModel,
     )
 
     return result.response
@@ -408,10 +460,7 @@ def generate_full_session(llm_client, turns: int = 8) -> Dict:
     print("  Generating initial greeting...")
     greeting = f"Hello! I'm your interviewer today. I see you're applying for the {profile.get('position', 'position')} role at {profile.get('grade', 'grade')} level. Let me start with a question: Can you tell me about your experience with {profile.get('position', 'this role')}?"
 
-    conversation_history.append({
-        "role": "interviewer",
-        "content": greeting
-    })
+    conversation_history.append({"role": "interviewer", "content": greeting})
 
     # Generate conversation turns
     for turn in range(turns):
@@ -423,10 +472,9 @@ def generate_full_session(llm_client, turns: int = 8) -> Dict:
             llm_client, profile, current_question, conversation_history
         )
 
-        conversation_history.append({
-            "role": "interviewee",
-            "content": interviewee_response
-        })
+        conversation_history.append(
+            {"role": "interviewee", "content": interviewee_response}
+        )
 
         # Observer analyzes
         observer_analysis = generate_observer_analysis(
@@ -443,13 +491,16 @@ def generate_full_session(llm_client, turns: int = 8) -> Dict:
         # Interviewer responds (if not last turn)
         if turn < turns - 1:
             interviewer_response = generate_interviewer_response(
-                llm_client, profile, conversation_history, observer_analysis, covered_topics
+                llm_client,
+                profile,
+                conversation_history,
+                observer_analysis,
+                covered_topics,
             )
 
-            conversation_history.append({
-                "role": "interviewer",
-                "content": interviewer_response
-            })
+            conversation_history.append(
+                {"role": "interviewer", "content": interviewer_response}
+            )
 
     # Generate final feedback
     print("  Generating final feedback...")
@@ -469,7 +520,7 @@ Generate final feedback:"""
     final_feedback_result = llm_client.generate_structured(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
-        response_format=FinalFeedbackPydantic
+        response_format=FinalFeedbackPydantic,
     )
 
     return {
@@ -477,7 +528,7 @@ Generate final feedback:"""
         "conversation_history": conversation_history,
         "observer_analyses": observer_analyses,
         "covered_topics": covered_topics,
-        "final_feedback": final_feedback_result.model_dump()
+        "final_feedback": final_feedback_result.model_dump(),
     }
 
 
@@ -511,9 +562,9 @@ def main():
     else:
         dataset_name = args.dataset_name or f"{args.agent_name}_evaluation"
 
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print("Dataset Generation")
-    print(f"{'='*80}")
+    print(f"{'=' * 80}")
     print(f"Mode: {args.mode}")
 
     if args.mode == "single-agent":
@@ -524,7 +575,7 @@ def main():
         print(f"Turns per session: {args.turns_per_session}")
 
     print(f"Dataset name: {dataset_name}")
-    print(f"{'='*80}\n")
+    print(f"{'=' * 80}\n")
 
     # Generate data based on mode
     try:
@@ -544,15 +595,19 @@ def main():
 
     # Upload to Langfuse
     try:
-        upload_to_langfuse(dataset_name, test_cases, args.agent_name if args.mode == "single-agent" else "full_sessions")
+        upload_to_langfuse(
+            dataset_name,
+            test_cases,
+            args.agent_name if args.mode == "single-agent" else "full_sessions",
+        )
     except Exception as e:
         print(f"\nFailed to upload to Langfuse: {e}")
         print("Data was generated but not uploaded.")
         sys.exit(1)
 
-    print(f"{'='*80}")
+    print(f"{'=' * 80}")
     print("✓ Dataset generation complete!")
-    print(f"{'='*80}\n")
+    print(f"{'=' * 80}\n")
 
     if args.mode == "full-session":
         print("Next steps:")
@@ -562,7 +617,9 @@ def main():
         print("Next steps:")
         print("  1. Review the dataset in Langfuse UI")
         print("  2. Run evaluation:")
-        print(f"     python scripts/evaluate_agent.py --agent-name {args.agent_name} --prompt-version latest")
+        print(
+            f"     python scripts/evaluate_agent.py --agent-name {args.agent_name} --prompt-version latest"
+        )
     print()
 
 
