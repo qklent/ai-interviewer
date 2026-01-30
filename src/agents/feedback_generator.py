@@ -26,7 +26,7 @@ class FeedbackGeneratorAgent:
     def __init__(self, llm_client: BaseLLMClient):
         self.llm = llm_client
 
-    @observe(name="FeedbackGenerator: Generate Final Feedback", metadata={"agent": "feedback_generator"})
+    @observe(name="FeedbackGenerator: Generate Final Feedback")
     def generate_feedback(
         self,
         candidate_info: CandidateInfo,

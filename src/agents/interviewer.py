@@ -27,7 +27,7 @@ class InterviewerAgent:
         self.current_difficulty = "medium"
         self.questions_asked: list[str] = []
 
-    @observe(name="Interviewer: Generate Greeting", metadata={"agent": "interviewer"})
+    @observe(name="Interviewer: Generate Greeting")
     def generate_greeting(self, candidate_info: CandidateInfo) -> tuple[str, str]:
         """Generate an opening greeting for the interview.
 
@@ -53,7 +53,7 @@ class InterviewerAgent:
 
         return greeting, f"[Interviewer]: {rationale}"
 
-    @observe(name="Interviewer: Generate Response", metadata={"agent": "interviewer"})
+    @observe(name="Interviewer: Generate Response")
     def generate_response(
         self,
         candidate_info: CandidateInfo,
@@ -145,7 +145,7 @@ class InterviewerAgent:
 
         return message, internal_thoughts
 
-    @observe(name="Interviewer: Generate First Question", metadata={"agent": "interviewer"})
+    @observe(name="Interviewer: Generate First Question")
     def generate_first_question(
         self,
         candidate_info: CandidateInfo,

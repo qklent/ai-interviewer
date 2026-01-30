@@ -69,7 +69,7 @@ class InterviewOrchestrator:
             logger.exception(f"Failed to initialize orchestrator: {e}")
             raise
 
-    @observe(name="Orchestrator: Interview Session", metadata={"agent": "orchestrator"})
+    @observe(name="Orchestrator: Interview Session")
     def start_interview(
         self,
         name: str,
@@ -163,7 +163,7 @@ class InterviewOrchestrator:
             logger.exception(f"Failed to start interview: {e}")
             raise
 
-    @observe(name="Orchestrator: Process Response", metadata={"agent": "orchestrator"})
+    @observe(name="Orchestrator: Process Response")
     def process_response(self, user_message: str) -> tuple[str, bool]:
         """Process a candidate's response and generate the next interviewer message.
 
