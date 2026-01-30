@@ -2,17 +2,23 @@
 """
 Offline Evaluation Script for Multi-Agent Interview System
 
+This script evaluates agents using a unified dataset of full interview sessions.
+It extracts agent-specific test cases from complete sessions dynamically.
+
 Usage:
     python scripts/evaluate_agent.py --agent-name observer --prompt-version latest
     python scripts/evaluate_agent.py --agent-name interviewer --prompt-version 2
     python scripts/evaluate_agent.py --agent-name feedback_generator --prompt-version 3
+
+    # Use custom dataset (default: full_interview_sessions)
+    python scripts/evaluate_agent.py --agent-name observer --prompt-version latest --dataset-name my_dataset
 """
 
 import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -122,7 +128,7 @@ def parse_args():
     )
     parser.add_argument(
         "--dataset-name",
-        help="Override default dataset name (default: {agent_name}_evaluation)",
+        help="Override default dataset name (default: full_interview_sessions)",
     )
     parser.add_argument("--run-name", help="Custom name for this evaluation run")
 
@@ -174,6 +180,144 @@ def get_prompt_content(
         )
         print(f"Falling back to local file...")
         return load_prompt(agent_name, prompt_type)
+
+
+# ============================================================================
+# Data Extraction from Full Sessions
+# ============================================================================
+
+
+def extract_observer_test_cases(session: Dict) -> List[Dict]:
+    """
+    Extract individual observer test cases from a full session.
+
+    Creates one test case per conversation turn where the interviewee responded.
+
+    Args:
+        session: Full interview session with profile, conversation_history, observer_analyses, etc.
+
+    Returns:
+        List of test cases with input/expected_output for ObserverAgent
+    """
+    test_cases = []
+    conversation_history = session.get("conversation_history", [])
+    observer_analyses = session.get("observer_analyses", [])
+    covered_topics = session.get("covered_topics", [])
+
+    # Track cumulative covered topics up to each turn
+    cumulative_topics = []
+
+    # Find all interviewee responses and match them with observer analyses
+    turn_idx = 0
+    for i in range(len(conversation_history) - 1):
+        if conversation_history[i]["role"] == "interviewer":
+            # Check if next message is from interviewee
+            if i + 1 < len(conversation_history) and conversation_history[i + 1]["role"] == "interviewee":
+                question = conversation_history[i]["content"]
+                candidate_response = conversation_history[i + 1]["content"]
+
+                # Get observer analysis for this turn (if available)
+                if turn_idx < len(observer_analyses):
+                    expected_analysis = observer_analyses[turn_idx]
+
+                    # Update cumulative topics with new topics from this analysis
+                    if "covered_topics" in expected_analysis:
+                        for topic in expected_analysis["covered_topics"]:
+                            if topic not in cumulative_topics:
+                                cumulative_topics.append(topic)
+
+                    test_cases.append({
+                        "input": {
+                            "question": question,
+                            "candidate_response": candidate_response,
+                            "conversation_history": conversation_history[:i+2],  # Up to current turn
+                            "covered_topics": cumulative_topics.copy(),
+                        },
+                        "expected_output": expected_analysis
+                    })
+                    turn_idx += 1
+
+    return test_cases
+
+
+def extract_interviewer_test_cases(session: Dict) -> List[Dict]:
+    """
+    Extract individual interviewer test cases from a full session.
+
+    Creates one test case per interviewer response (excluding initial greeting).
+
+    Args:
+        session: Full interview session
+
+    Returns:
+        List of test cases with input/expected_output for InterviewerAgent
+    """
+    test_cases = []
+    conversation_history = session.get("conversation_history", [])
+    observer_analyses = session.get("observer_analyses", [])
+    profile = session.get("profile", {})
+
+    # Track cumulative covered topics
+    cumulative_topics = []
+
+    # Find all interviewer responses after the initial greeting
+    analysis_idx = 0
+    for i in range(len(conversation_history)):
+        if conversation_history[i]["role"] == "interviewer" and i > 0:
+            # This is an interviewer response after a candidate answer
+            # Get the observer analysis for the previous candidate response
+            if analysis_idx < len(observer_analyses):
+                observer_analysis = observer_analyses[analysis_idx]
+
+                # Update cumulative topics
+                if "covered_topics" in observer_analysis:
+                    for topic in observer_analysis["covered_topics"]:
+                        if topic not in cumulative_topics:
+                            cumulative_topics.append(topic)
+
+                test_cases.append({
+                    "input": {
+                        "position": profile.get("position", "Unknown"),
+                        "grade": profile.get("grade", "Unknown"),
+                        "conversation_history": conversation_history[:i],  # Up to but not including this response
+                        "observer_analysis": observer_analysis,
+                        "covered_topics": cumulative_topics.copy(),
+                    },
+                    "expected_output": {
+                        "quality_criteria": {
+                            "note": "No explicit expected output available from full session",
+                            "actual_response": conversation_history[i]["content"]
+                        }
+                    }
+                })
+                analysis_idx += 1
+
+    return test_cases
+
+
+def extract_feedback_generator_test_case(session: Dict) -> Dict:
+    """
+    Extract feedback generator test case from a full session.
+
+    Uses the entire session to create a single test case.
+
+    Args:
+        session: Full interview session
+
+    Returns:
+        Single test case with input/expected_output for FeedbackGeneratorAgent
+    """
+    profile = session.get("profile", {})
+
+    return {
+        "input": {
+            "position": profile.get("position", "Unknown"),
+            "target_grade": profile.get("grade", "Unknown"),
+            "conversation_history": session.get("conversation_history", []),
+            "observer_analyses": session.get("observer_analyses", []),
+        },
+        "expected_output": session.get("final_feedback", {})
+    }
 
 
 # ============================================================================
@@ -516,6 +660,9 @@ def run_evaluation(
     """
     Run offline evaluation for specified agent and prompt version.
 
+    This function extracts agent-specific test cases from full interview sessions
+    and evaluates the agent against them.
+
     Args:
         agent_name: Name of agent to evaluate
         prompt_version: Prompt version to test
@@ -524,9 +671,9 @@ def run_evaluation(
     """
     langfuse = Langfuse()
 
-    # Determine dataset name
+    # Determine dataset name (default to unified dataset)
     if dataset_name is None:
-        dataset_name = f"{agent_name}_evaluation"
+        dataset_name = "full_interview_sessions"
 
     # Determine run name
     if run_name is None:
@@ -544,15 +691,38 @@ def run_evaluation(
     # Get dataset
     try:
         dataset = langfuse.get_dataset(dataset_name)
-        print(
-            f"✓ Loaded dataset '{dataset_name}' with {len(list(dataset.items))} items\n"
-        )
+        dataset_items = list(dataset.items)
+        print(f"✓ Loaded dataset '{dataset_name}' with {len(dataset_items)} sessions\n")
     except Exception as e:
         print(f"✗ Error loading dataset '{dataset_name}': {e}")
         print(f"\nTo create a dataset, use:")
-        print(
-            f"  python scripts/generate_dataset.py --agent-name {agent_name} --num-cases 10"
-        )
+        print(f"  python scripts/generate_dataset.py --mode full-session --num-cases 5")
+        return
+
+    # Extract agent-specific test cases from full sessions
+    print(f"Extracting {agent_name} test cases from full sessions...\n")
+    extracted_test_cases = []
+
+    for session_item in dataset_items:
+        # The session data is in session_item.input
+        session = session_item.input
+
+        if agent_name == "observer":
+            cases = extract_observer_test_cases(session)
+            extracted_test_cases.extend(cases)
+        elif agent_name == "interviewer":
+            cases = extract_interviewer_test_cases(session)
+            extracted_test_cases.extend(cases)
+        elif agent_name == "feedback_generator":
+            case = extract_feedback_generator_test_case(session)
+            extracted_test_cases.append(case)
+        else:
+            raise ValueError(f"Unknown agent: {agent_name}")
+
+    print(f"✓ Extracted {len(extracted_test_cases)} test cases for {agent_name}\n")
+
+    if len(extracted_test_cases) == 0:
+        print("✗ No test cases extracted. Check dataset structure.")
         return
 
     # Select task and evaluator based on agent
@@ -572,24 +742,64 @@ def run_evaluation(
     else:
         raise ValueError(f"Unknown agent: {agent_name}")
 
+    # Create a temporary dataset-like structure for extracted test cases
+    # Langfuse experiment expects items with .input and .expected_output attributes
+    class TestCaseItem:
+        def __init__(self, test_case):
+            self.input = test_case["input"]
+            self.expected_output = test_case.get("expected_output")
+
+    test_case_items = [TestCaseItem(tc) for tc in extracted_test_cases]
+
     # Run experiment
     print("Running experiment... This may take a few minutes.\n")
 
-    result = langfuse.run_experiment(
-        name=run_name,
-        description=f"Evaluating {agent_name} with prompt version {prompt_version}",
-        data=dataset,
-        task=task_fn,
-        evaluators=[evaluator],
-    )
+    # We need to manually iterate through test cases since we're not using a Langfuse dataset directly
+    results = []
+    for i, item in enumerate(test_case_items):
+        print(f"Evaluating test case {i + 1}/{len(test_case_items)}...")
+        try:
+            # Run task
+            output = task_fn(item)
+
+            # Run evaluator
+            evaluation = evaluator(
+                input=item.input,
+                output=output,
+                expected_output=item.expected_output if item.expected_output else {}
+            )
+
+            results.append({
+                "test_case": i + 1,
+                "score": evaluation.value,
+                "comment": evaluation.comment,
+                "metadata": evaluation.metadata if hasattr(evaluation, 'metadata') else {}
+            })
+        except Exception as e:
+            print(f"  ✗ Error on test case {i + 1}: {e}")
+            results.append({
+                "test_case": i + 1,
+                "score": 0.0,
+                "comment": f"Error: {str(e)}",
+                "metadata": {}
+            })
+
+    # Calculate summary statistics
+    scores = [r["score"] for r in results if r["score"] is not None]
+    avg_score = sum(scores) / len(scores) if scores else 0.0
 
     # Print results
     print(f"\n{'=' * 80}")
     print("Evaluation Results")
     print(f"{'=' * 80}\n")
-    print(result.format())
+    print(f"Total test cases: {len(results)}")
+    print(f"Average score: {avg_score:.3f}")
+    print(f"\nPer-case results:")
+    for result in results:
+        print(f"  Case {result['test_case']}: {result['score']:.3f} - {result['comment'][:100]}...")
+
     print(f"\n{'=' * 80}")
-    print(f"✓ Evaluation complete! View detailed results in Langfuse UI.")
+    print(f"✓ Evaluation complete!")
     print(f"{'=' * 80}\n")
 
 
