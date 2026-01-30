@@ -862,6 +862,18 @@ def run_evaluation(
 
             item = TestCaseItem(test_case)
 
+            # Create a trace for this test case evaluation
+            trace = langfuse.trace(
+                name=f"{agent_name}_eval_case_{i + 1}",
+                metadata={
+                    "agent_name": agent_name,
+                    "prompt_version": prompt_version,
+                    "dataset_name": dataset_name,
+                    "run_name": run_name,
+                    "test_case_index": i + 1,
+                }
+            )
+
             # Run task
             print(f"  → Running {agent_name} agent...")
             output = task_fn(item)
@@ -876,11 +888,30 @@ def run_evaluation(
             )
             print(f"  ✓ Evaluation complete (score: {evaluation.value:.3f})")
 
+            # Save evaluation to the trace
+            trace.score(
+                name=f"{agent_name}_llm_judge",
+                value=evaluation.value,
+                comment=evaluation.comment,
+                data_type="NUMERIC"
+            )
+
+            # Save individual metric scores if available
+            if hasattr(evaluation, 'metadata') and evaluation.metadata:
+                for metric_name, metric_value in evaluation.metadata.items():
+                    if isinstance(metric_value, (int, float)) and metric_name != "overall_score":
+                        trace.score(
+                            name=metric_name,
+                            value=metric_value,
+                            data_type="NUMERIC"
+                        )
+
             results.append({
                 "test_case": i + 1,
                 "score": evaluation.value,
                 "comment": evaluation.comment,
-                "metadata": evaluation.metadata if hasattr(evaluation, 'metadata') else {}
+                "metadata": evaluation.metadata if hasattr(evaluation, 'metadata') else {},
+                "trace_id": trace.id
             })
         except Exception as e:
             import traceback
@@ -891,12 +922,63 @@ def run_evaluation(
                 "test_case": i + 1,
                 "score": 0.0,
                 "comment": f"Error: {str(e)}",
-                "metadata": {}
+                "metadata": {},
+                "trace_id": None
             })
 
     # Calculate summary statistics
     scores = [r["score"] for r in results if r["score"] is not None]
     avg_score = sum(scores) / len(scores) if scores else 0.0
+
+    # Calculate averaged metric scores (if available)
+    metric_averages = {}
+    all_metrics = set()
+    for result in results:
+        if result.get("metadata"):
+            all_metrics.update(result["metadata"].keys())
+
+    for metric in all_metrics:
+        if metric != "comment":  # Skip non-numeric fields
+            metric_values = [
+                r["metadata"].get(metric)
+                for r in results
+                if r.get("metadata") and isinstance(r["metadata"].get(metric), (int, float))
+            ]
+            if metric_values:
+                metric_averages[metric] = sum(metric_values) / len(metric_values)
+
+    # Create a summary trace for the entire evaluation run
+    summary_trace = langfuse.trace(
+        name=f"{run_name}_summary",
+        metadata={
+            "agent_name": agent_name,
+            "prompt_version": prompt_version,
+            "dataset_name": dataset_name,
+            "run_name": run_name,
+            "total_test_cases": len(results),
+            "successful_cases": len([r for r in results if r["score"] > 0]),
+            "failed_cases": len([r for r in results if r["score"] == 0]),
+        }
+    )
+
+    # Save overall average score
+    summary_trace.score(
+        name=f"{agent_name}_average_score",
+        value=avg_score,
+        comment=f"Average score across {len(scores)} test cases for {agent_name} using prompt version {prompt_version}",
+        data_type="NUMERIC"
+    )
+
+    # Save individual metric averages
+    for metric_name, metric_avg in metric_averages.items():
+        summary_trace.score(
+            name=f"avg_{metric_name}",
+            value=metric_avg,
+            data_type="NUMERIC"
+        )
+
+    # Flush to ensure all data is sent to Langfuse
+    langfuse.flush()
 
     # Print results
     print(f"\n{'=' * 80}")
@@ -904,12 +986,20 @@ def run_evaluation(
     print(f"{'=' * 80}\n")
     print(f"Total test cases: {len(results)}")
     print(f"Average score: {avg_score:.3f}")
+
+    if metric_averages:
+        print("\nAverage metric scores:")
+        for metric_name, metric_avg in metric_averages.items():
+            print(f"  {metric_name}: {metric_avg:.3f}")
+
     print("\nPer-case results:")
     for result in results:
         print(f"  Case {result['test_case']}: {result['score']:.3f} - {result['comment'][:100]}...")
 
     print(f"\n{'=' * 80}")
     print("✓ Evaluation complete!")
+    print(f"  Summary trace ID: {summary_trace.id}")
+    print(f"  Results saved to Langfuse")
     print(f"{'=' * 80}\n")
 
 
