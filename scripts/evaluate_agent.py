@@ -185,6 +185,30 @@ def get_prompt_content(
 # ============================================================================
 
 
+def transform_conversation_history(raw_history: List[Dict]) -> List[Dict]:
+    """
+    Transform conversation history from dataset format to agent format.
+
+    Dataset format: [{"role": "interviewer"/"interviewee", "content": "..."}]
+    Agent format: [{"agent_message": "...", "user_message": "..."}]
+
+    Args:
+        raw_history: Conversation history in dataset format
+
+    Returns:
+        Conversation history in agent format
+    """
+    transformed = []
+    for i in range(0, len(raw_history) - 1, 2):
+        if i + 1 < len(raw_history):
+            if raw_history[i]["role"] == "interviewer":
+                transformed.append({
+                    "agent_message": raw_history[i]["content"],
+                    "user_message": raw_history[i + 1]["content"]
+                })
+    return transformed
+
+
 def extract_observer_test_cases(session: Dict) -> List[Dict]:
     """
     Extract individual observer test cases from a full session.
@@ -346,15 +370,25 @@ def evaluate_observer_agent(
     # Extract input
     question = item["input"]["question"]
     candidate_response = item["input"]["candidate_response"]
-    conversation_history = item["input"].get("conversation_history", [])
-    covered_topics = item["input"].get("covered_topics", [])
+    raw_conversation_history = item["input"].get("conversation_history", [])
+
+    # Transform conversation history to agent format
+    conversation_history = transform_conversation_history(raw_conversation_history)
+
+    # Create a minimal candidate info (observer needs this but doesn't use much of it)
+    candidate_info = CandidateInfo(
+        name="Test Candidate",
+        position="Software Engineer",
+        target_grade="Middle",
+        experience="N/A",
+    )
 
     # Run analysis
     analysis = observer.analyze_response(
-        question=question,
-        response=candidate_response,
+        candidate_info=candidate_info,
         conversation_history=conversation_history,
-        covered_topics=covered_topics,
+        current_question=question,
+        candidate_response=candidate_response,
     )
 
     # Convert to dict for evaluation (map actual model fields to dataset format)
@@ -439,7 +473,7 @@ def evaluate_interviewer_agent(
         experience="N/A",
     )
 
-    interviewer = InterviewerAgent(llm_client, candidate_info)
+    interviewer = InterviewerAgent(llm_client)
 
     # Override system prompt
     system_prompt = get_prompt_content(
@@ -448,9 +482,26 @@ def evaluate_interviewer_agent(
     interviewer.system_prompt = system_prompt
 
     # Extract input
-    conversation_history = item["input"]["conversation_history"]
+    raw_conversation_history = item["input"]["conversation_history"]
     observer_analysis_data = item["input"]["observer_analysis"]
-    covered_topics = item["input"]["covered_topics"]
+
+    # Transform conversation history from dataset format (role/content) to agent format (agent_message/user_message)
+    conversation_history = transform_conversation_history(raw_conversation_history)
+
+    # Extract current question and candidate response from raw conversation history
+    current_question = ""
+    candidate_response = ""
+    if len(raw_conversation_history) >= 2:
+        # Find the last interviewer question and candidate response pair
+        for i in range(len(raw_conversation_history) - 1, -1, -1):
+            if raw_conversation_history[i]["role"] == "interviewee":
+                candidate_response = raw_conversation_history[i]["content"]
+                # Find the previous interviewer question
+                for j in range(i - 1, -1, -1):
+                    if raw_conversation_history[j]["role"] == "interviewer":
+                        current_question = raw_conversation_history[j]["content"]
+                        break
+                break
 
     # Convert observer_analysis dict to ObserverAnalysis object
     # Map from dataset format to actual ObserverAnalysis model
@@ -468,13 +519,15 @@ def evaluate_interviewer_agent(
     )
 
     # Generate response
-    response = interviewer.generate_response(
+    response, internal = interviewer.generate_response(
+        candidate_info=candidate_info,
         conversation_history=conversation_history,
+        current_question=current_question,
+        candidate_response=candidate_response,
         observer_analysis=observer_analysis,
-        covered_topics=covered_topics,
     )
 
-    return {"response": response["visible"], "internal_thoughts": response["internal"]}
+    return {"response": response, "internal_thoughts": internal}
 
 
 def create_interviewer_evaluator(langfuse: Langfuse):
@@ -553,7 +606,7 @@ def evaluate_feedback_generator_agent(
         experience="N/A",
     )
 
-    feedback_gen = FeedbackGeneratorAgent(llm_client, candidate_info)
+    feedback_gen = FeedbackGeneratorAgent(llm_client)
 
     # Override system prompt
     system_prompt = get_prompt_content(
@@ -562,29 +615,15 @@ def evaluate_feedback_generator_agent(
     feedback_gen.system_prompt = system_prompt
 
     # Extract input
-    conversation_history = item["input"]["conversation_history"]
+    raw_conversation_history = item["input"]["conversation_history"]
 
-    # Convert observer analyses to ObserverAnalysis objects with proper field mapping
-    observer_analyses = []
-    for analysis_data in item["input"]["observer_analyses"]:
-        observer_analyses.append(
-            ObserverAnalysis(
-                answer_quality=analysis_data.get("quality", "good"),
-                confidence_level=analysis_data.get("confidence", "medium"),
-                factual_accuracy=not analysis_data.get("has_hallucination", False),
-                hallucination_detected=analysis_data.get("has_hallucination", False),
-                off_topic=analysis_data.get("quality") == "off_topic",
-                candidate_question_detected=False,
-                recommended_action=analysis_data.get("recommended_action", "continue"),
-                difficulty_adjustment="maintain",
-                topics_covered=analysis_data.get("covered_topics", []),
-                key_observations=[analysis_data.get("reasoning", "")],
-            )
-        )
+    # Transform conversation history to agent format
+    conversation_history = transform_conversation_history(raw_conversation_history)
 
-    # Generate feedback
-    feedback = feedback_gen.generate_feedback(
-        conversation_history=conversation_history, observer_analyses=observer_analyses
+    # Generate feedback (no longer needs observer_analyses parameter)
+    feedback, internal = feedback_gen.generate_feedback(
+        candidate_info=candidate_info,
+        conversation_history=conversation_history,
     )
 
     # Convert to dict (map actual model fields to dataset format)
