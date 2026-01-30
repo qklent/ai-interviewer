@@ -5,6 +5,9 @@ import json
 from abc import ABC, abstractmethod
 from typing import Optional, TYPE_CHECKING
 from langfuse import get_client
+from src.utils.app_logger import get_logger
+
+logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from src.utils.prompt_loader import PromptMetadata
@@ -62,9 +65,11 @@ class OpenAIClient(BaseLLMClient):
 
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         if not self.api_key:
+            logger.error("OPENAI_API_KEY not found in environment variables")
             raise ValueError("OPENAI_API_KEY not found in environment variables")
         self.client = OpenAI(api_key=self.api_key)
         self.model = model
+        logger.info(f"OpenAIClient initialized with model: {model}")
 
     def generate(
         self,
@@ -167,9 +172,11 @@ class AnthropicClient(BaseLLMClient):
 
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
         if not self.api_key:
+            logger.error("ANTHROPIC_API_KEY not found in environment variables")
             raise ValueError("ANTHROPIC_API_KEY not found in environment variables")
         self.client = anthropic.Anthropic(api_key=self.api_key)
         self.model = model
+        logger.info(f"AnthropicClient initialized with model: {model}")
 
     def generate(
         self,
@@ -179,38 +186,46 @@ class AnthropicClient(BaseLLMClient):
         max_tokens: int = 2000,
         prompt_metadata: Optional["PromptMetadata"] = None,
     ) -> str:
-        langfuse = get_client()
+        logger.debug(f"Anthropic generate: model={self.model}, max_tokens={max_tokens}")
 
-        # Fetch the prompt from Langfuse if metadata is available
-        prompt = None
-        if prompt_metadata:
-            try:
-                prompt = langfuse.get_prompt(
-                    prompt_metadata.name,
-                    version=prompt_metadata.version
+        try:
+            langfuse = get_client()
+
+            # Fetch the prompt from Langfuse if metadata is available
+            prompt = None
+            if prompt_metadata:
+                try:
+                    prompt = langfuse.get_prompt(
+                        prompt_metadata.name,
+                        version=prompt_metadata.version
+                    )
+                except Exception as e:
+                    logger.debug(f"Could not fetch prompt from Langfuse: {e}")
+
+            # Create a generation with the prompt linked
+            with langfuse.start_as_current_observation(
+                as_type="generation",
+                name="llm-generation",
+                prompt=prompt
+            ) as generation:
+                response = self.client.messages.create(
+                    model=self.model,
+                    max_tokens=max_tokens,
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": user_prompt}],
                 )
-            except Exception:
-                pass  # Silently fail if prompt not found
 
-        # Create a generation with the prompt linked
-        with langfuse.start_as_current_observation(
-            as_type="generation",
-            name="llm-generation",
-            prompt=prompt
-        ) as generation:
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=max_tokens,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_prompt}],
-            )
+                content = response.content[0].text
+                logger.debug(f"Anthropic response received (length: {len(content)})")
 
-            content = response.content[0].text
+                # Update the generation with output
+                generation.update(output=content)
 
-            # Update the generation with output
-            generation.update(output=content)
+                return content
 
-            return content
+        except Exception as e:
+            logger.exception(f"Anthropic API call failed: {e}")
+            raise
 
     def generate_json(
         self,
@@ -220,54 +235,68 @@ class AnthropicClient(BaseLLMClient):
         max_tokens: int = 2000,
         prompt_metadata: Optional["PromptMetadata"] = None,
     ) -> dict:
-        langfuse = get_client()
+        logger.debug(f"Anthropic generate_json: model={self.model}, max_tokens={max_tokens}")
 
-        # Fetch the prompt from Langfuse if metadata is available
-        prompt = None
-        if prompt_metadata:
-            try:
-                prompt = langfuse.get_prompt(
-                    prompt_metadata.name,
-                    version=prompt_metadata.version
+        try:
+            langfuse = get_client()
+
+            # Fetch the prompt from Langfuse if metadata is available
+            prompt = None
+            if prompt_metadata:
+                try:
+                    prompt = langfuse.get_prompt(
+                        prompt_metadata.name,
+                        version=prompt_metadata.version
+                    )
+                except Exception as e:
+                    logger.debug(f"Could not fetch prompt from Langfuse: {e}")
+
+            # Create a generation with the prompt linked
+            with langfuse.start_as_current_observation(
+                as_type="generation",
+                name="llm-generation",
+                prompt=prompt
+            ) as generation:
+                json_system = (
+                    system_prompt
+                    + "\n\nIMPORTANT: You must respond with valid JSON only, no other text."
                 )
-            except Exception:
-                pass  # Silently fail if prompt not found
+                response = self.client.messages.create(
+                    model=self.model,
+                    max_tokens=max_tokens,
+                    system=json_system,
+                    messages=[{"role": "user", "content": user_prompt}],
+                )
 
-        # Create a generation with the prompt linked
-        with langfuse.start_as_current_observation(
-            as_type="generation",
-            name="llm-generation",
-            prompt=prompt
-        ) as generation:
-            json_system = (
-                system_prompt
-                + "\n\nIMPORTANT: You must respond with valid JSON only, no other text."
-            )
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=max_tokens,
-                system=json_system,
-                messages=[{"role": "user", "content": user_prompt}],
-            )
+                content = response.content[0].text
 
-            content = response.content[0].text
+                # Try to extract JSON if there's extra text
+                try:
+                    result = json.loads(content)
+                except json.JSONDecodeError as e:
+                    logger.warning(f"JSON parse failed, attempting to extract: {e}")
+                    # Try to find JSON in the response
+                    start = content.find("{")
+                    end = content.rfind("}") + 1
+                    if start != -1 and end > start:
+                        result = json.loads(content[start:end])
+                    else:
+                        logger.error(f"Could not extract JSON from response: {content[:200]}")
+                        raise
 
-            # Try to extract JSON if there's extra text
-            try:
-                result = json.loads(content)
-            except json.JSONDecodeError:
-                # Try to find JSON in the response
-                start = content.find("{")
-                end = content.rfind("}") + 1
-                if start != -1 and end > start:
-                    result = json.loads(content[start:end])
-                else:
-                    raise
+                logger.debug(f"Anthropic JSON response received with {len(result)} keys")
 
-            # Update the generation with output
-            generation.update(output=result)
+                # Update the generation with output
+                generation.update(output=result)
 
-            return result
+                return result
+
+        except json.JSONDecodeError as e:
+            logger.exception(f"Failed to parse JSON from Anthropic response: {e}")
+            raise
+        except Exception as e:
+            logger.exception(f"Anthropic API call failed: {e}")
+            raise
 
 
 class OpenRouterClient(BaseLLMClient):
@@ -282,6 +311,7 @@ class OpenRouterClient(BaseLLMClient):
 
         self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
         if not self.api_key:
+            logger.error("OPENROUTER_API_KEY not found in environment variables")
             raise ValueError("OPENROUTER_API_KEY not found in environment variables")
 
         self.model = model or os.getenv(
@@ -293,6 +323,7 @@ class OpenRouterClient(BaseLLMClient):
             api_key=self.api_key,
             base_url="https://openrouter.ai/api/v1",
         )
+        logger.info(f"OpenRouterClient initialized with model: {self.model}")
 
     def generate(
         self,
@@ -302,41 +333,49 @@ class OpenRouterClient(BaseLLMClient):
         max_tokens: int = 2000,
         prompt_metadata: Optional["PromptMetadata"] = None,
     ) -> str:
-        langfuse = get_client()
+        logger.debug(f"OpenRouter generate: model={self.model}, temp={temperature}, max_tokens={max_tokens}")
 
-        # Fetch the prompt from Langfuse if metadata is available
-        prompt = None
-        if prompt_metadata:
-            try:
-                prompt = langfuse.get_prompt(
-                    prompt_metadata.name,
-                    version=prompt_metadata.version
+        try:
+            langfuse = get_client()
+
+            # Fetch the prompt from Langfuse if metadata is available
+            prompt = None
+            if prompt_metadata:
+                try:
+                    prompt = langfuse.get_prompt(
+                        prompt_metadata.name,
+                        version=prompt_metadata.version
+                    )
+                except Exception as e:
+                    logger.debug(f"Could not fetch prompt from Langfuse: {e}")
+
+            # Create a generation with the prompt linked
+            with langfuse.start_as_current_observation(
+                as_type="generation",
+                name="llm-generation",
+                prompt=prompt
+            ) as generation:
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=temperature,
+                    max_tokens=max_tokens,
                 )
-            except Exception:
-                pass  # Silently fail if prompt not found
 
-        # Create a generation with the prompt linked
-        with langfuse.start_as_current_observation(
-            as_type="generation",
-            name="llm-generation",
-            prompt=prompt
-        ) as generation:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
+                content = response.choices[0].message.content or ""
+                logger.debug(f"OpenRouter response received (length: {len(content)})")
 
-            content = response.choices[0].message.content or ""
+                # Update the generation with output
+                generation.update(output=content)
 
-            # Update the generation with output
-            generation.update(output=content)
+                return content
 
-            return content
+        except Exception as e:
+            logger.exception(f"OpenRouter API call failed: {e}")
+            raise
 
     def generate_json(
         self,
@@ -346,59 +385,73 @@ class OpenRouterClient(BaseLLMClient):
         max_tokens: int = 2000,
         prompt_metadata: Optional["PromptMetadata"] = None,
     ) -> dict:
-        langfuse = get_client()
+        logger.debug(f"OpenRouter generate_json: model={self.model}, temp={temperature}, max_tokens={max_tokens}")
 
-        # Fetch the prompt from Langfuse if metadata is available
-        prompt = None
-        if prompt_metadata:
-            try:
-                prompt = langfuse.get_prompt(
-                    prompt_metadata.name,
-                    version=prompt_metadata.version
+        try:
+            langfuse = get_client()
+
+            # Fetch the prompt from Langfuse if metadata is available
+            prompt = None
+            if prompt_metadata:
+                try:
+                    prompt = langfuse.get_prompt(
+                        prompt_metadata.name,
+                        version=prompt_metadata.version
+                    )
+                except Exception as e:
+                    logger.debug(f"Could not fetch prompt from Langfuse: {e}")
+
+            # Create a generation with the prompt linked
+            with langfuse.start_as_current_observation(
+                as_type="generation",
+                name="llm-generation",
+                prompt=prompt
+            ) as generation:
+                # Add JSON instruction to system prompt
+                json_system = (
+                    system_prompt
+                    + "\n\nIMPORTANT: You must respond with valid JSON only, no other text."
                 )
-            except Exception:
-                pass  # Silently fail if prompt not found
 
-        # Create a generation with the prompt linked
-        with langfuse.start_as_current_observation(
-            as_type="generation",
-            name="llm-generation",
-            prompt=prompt
-        ) as generation:
-            # Add JSON instruction to system prompt
-            json_system = (
-                system_prompt
-                + "\n\nIMPORTANT: You must respond with valid JSON only, no other text."
-            )
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": json_system},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
 
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": json_system},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
+                content = response.choices[0].message.content or "{}"
 
-            content = response.choices[0].message.content or "{}"
+                # Try to extract JSON if there's extra text
+                try:
+                    result = json.loads(content)
+                except json.JSONDecodeError as e:
+                    logger.warning(f"JSON parse failed, attempting to extract: {e}")
+                    # Try to find JSON in the response
+                    start = content.find("{")
+                    end = content.rfind("}") + 1
+                    if start != -1 and end > start:
+                        result = json.loads(content[start:end])
+                    else:
+                        logger.error(f"Could not extract JSON from response: {content[:200]}")
+                        raise
 
-            # Try to extract JSON if there's extra text
-            try:
-                result = json.loads(content)
-            except json.JSONDecodeError:
-                # Try to find JSON in the response
-                start = content.find("{")
-                end = content.rfind("}") + 1
-                if start != -1 and end > start:
-                    result = json.loads(content[start:end])
-                else:
-                    raise
+                logger.debug(f"OpenRouter JSON response received with {len(result)} keys")
 
-            # Update the generation with output
-            generation.update(output=result)
+                # Update the generation with output
+                generation.update(output=result)
 
-            return result
+                return result
+
+        except json.JSONDecodeError as e:
+            logger.exception(f"Failed to parse JSON from OpenRouter response: {e}")
+            raise
+        except Exception as e:
+            logger.exception(f"OpenRouter API call failed: {e}")
+            raise
 
 
 def get_llm_client(provider: str = "openai", **kwargs) -> BaseLLMClient:
