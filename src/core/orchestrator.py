@@ -78,22 +78,25 @@ class InterviewOrchestrator:
         """
         # Track session metadata in Langfuse
         if is_tracing_enabled():
-            langfuse = get_client()
-            # Update trace-level attributes
-            langfuse.update_current_trace(
-                user_id=name,
-                tags=["interview", grade, position],
-            )
-            # Update span-level attributes
-            langfuse.update_current_span(
-                name=f"Interview: {name}",
-                metadata={
-                    "position": position,
-                    "target_grade": grade,
-                    "experience": experience,
-                    "mode": "interactive",
-                },
-            )
+            try:
+                langfuse = get_client()
+                # Update trace-level attributes
+                langfuse.update_current_trace(
+                    user_id=name,
+                    tags=["interview", grade, position],
+                )
+                # Update span-level attributes
+                langfuse.update_current_span(
+                    name=f"Interview: {name}",
+                    metadata={
+                        "position": position,
+                        "target_grade": grade,
+                        "experience": experience,
+                        "mode": "interactive",
+                    },
+                )
+            except Exception as e:
+                print(f"⚠️  Could not update Langfuse trace/span: {e}")
 
         # Parse grade
         grade_map = {
@@ -136,6 +139,7 @@ class InterviewOrchestrator:
 
         return greeting
 
+    @observe(name="process_response")
     def process_response(self, user_message: str) -> tuple[str, bool]:
         """Process a candidate's response and generate the next interviewer message.
 
@@ -265,29 +269,33 @@ class InterviewOrchestrator:
 
         # Update trace with final results
         if is_tracing_enabled() and feedback:
-            langfuse = get_client()
-            langfuse.update_current_span(
-                output={
-                    "assessed_grade": feedback.assessed_grade.value
-                    if hasattr(feedback.assessed_grade, "value")
-                    else str(feedback.assessed_grade),
-                    "confidence_score": feedback.confidence_score,
-                    "total_turns": self.turn_count,
-                    "hiring_recommendation": feedback.hiring_recommendation.value
-                    if hasattr(feedback.hiring_recommendation, "value")
-                    else str(feedback.hiring_recommendation),
-                },
-                metadata={
-                    "confirmed_skills": [
-                        {"topic": s.topic, "status": s.status, "details": s.details}
-                        for s in feedback.confirmed_skills
-                    ],
-                    "knowledge_gaps": [
-                        {"topic": s.topic, "status": s.status, "details": s.details}
-                        for s in feedback.knowledge_gaps
-                    ],
-                },
-            )
+            try:
+                langfuse = get_client()
+                langfuse.update_current_span(
+                    output={
+                        "assessed_grade": feedback.assessed_grade.value
+                        if hasattr(feedback.assessed_grade, "value")
+                        else str(feedback.assessed_grade),
+                        "confidence_score": feedback.confidence_score,
+                        "total_turns": self.turn_count,
+                        "hiring_recommendation": feedback.hiring_recommendation.value
+                        if hasattr(feedback.hiring_recommendation, "value")
+                        else str(feedback.hiring_recommendation),
+                    },
+                    metadata={
+                        "confirmed_skills": [
+                            {"topic": s.topic, "status": s.status, "details": s.details}
+                            for s in feedback.confirmed_skills
+                        ],
+                        "knowledge_gaps": [
+                            {"topic": s.topic, "status": s.status, "details": s.details}
+                            for s in feedback.knowledge_gaps
+                        ],
+                    },
+                )
+            except Exception as e:
+                # Silently fail if span context is not available
+                print(f"⚠️  Could not update Langfuse span: {e}")
 
         # Save the log
         log_path = self.logger.save()
