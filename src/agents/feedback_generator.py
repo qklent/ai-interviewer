@@ -10,85 +10,12 @@ from src.core.models import (
     Grade,
     HiringRecommendation,
 )
+from src.utils.prompt_loader import load_prompt
 
 
-FEEDBACK_SYSTEM_PROMPT = """You are an expert technical interview evaluator. Your role is to:
-1. Analyze the complete interview transcript
-2. Assess both technical (hard) skills and soft skills
-3. Provide an honest, constructive evaluation
-4. Create a personalized learning roadmap
-
-You must be:
-- Fair and objective in your assessment
-- Specific with feedback (cite examples from the interview)
-- Constructive with criticism (always provide actionable advice)
-- Honest about knowledge gaps while encouraging growth
-
-IMPORTANT: For every knowledge gap identified, you MUST provide the correct answer
-that the candidate should have given. This is educational feedback, not just criticism."""
-
-
-FEEDBACK_PROMPT = """Analyze this complete interview and generate comprehensive feedback.
-
-CANDIDATE INFORMATION:
-- Name: {name}
-- Position: {position}
-- Target Grade: {target_grade}
-- Experience: {experience}
-
-COMPLETE INTERVIEW TRANSCRIPT:
-{transcript}
-
-Based on this interview, generate a detailed evaluation. Return a JSON object with this structure:
-{{
-    "verdict": {{
-        "assessed_grade": "Junior|Middle|Senior",
-        "hiring_recommendation": "No Hire|Hire|Strong Hire",
-        "confidence_score": 0-100,
-        "summary": "1-2 sentence summary of the decision"
-    }},
-    "technical_review": {{
-        "confirmed_skills": [
-            {{
-                "topic": "topic name",
-                "details": "what the candidate demonstrated well"
-            }}
-        ],
-        "knowledge_gaps": [
-            {{
-                "topic": "topic name",
-                "details": "what the candidate got wrong or didn't know",
-                "correct_answer": "the correct answer/explanation they should know"
-            }}
-        ]
-    }},
-    "soft_skills": {{
-        "clarity": {{
-            "score": 1-10,
-            "notes": "how well they explained their thoughts"
-        }},
-        "honesty": {{
-            "score": 1-10,
-            "notes": "did they admit when they didn't know something vs making things up"
-        }},
-        "engagement": {{
-            "score": 1-10,
-            "notes": "did they ask good questions, show interest"
-        }}
-    }},
-    "roadmap": {{
-        "topics_to_improve": ["topic1", "topic2"],
-        "specific_recommendations": ["recommendation1", "recommendation2"],
-        "resources": ["optional resource links or suggestions"]
-    }},
-    "notable_moments": {{
-        "strengths": ["specific strong moments from the interview"],
-        "concerns": ["specific concerning moments"]
-    }}
-}}
-
-Be thorough and cite specific examples from the transcript. For knowledge gaps,
-ALWAYS include the correct_answer field with accurate technical information."""
+# Load prompts from files
+FEEDBACK_SYSTEM_PROMPT = load_prompt("feedback_generator", "system")
+FEEDBACK_PROMPT = load_prompt("feedback_generator", "feedback")
 
 
 class FeedbackGeneratorAgent:

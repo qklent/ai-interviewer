@@ -1,0 +1,45 @@
+Analyze the candidate's response and provide guidance for the Interviewer.
+
+CANDIDATE INFORMATION:
+- Name: {name}
+- Position: {position}
+- Target Grade: {target_grade}
+- Experience: {experience}
+
+CONVERSATION HISTORY:
+{conversation_history}
+
+CURRENT QUESTION FROM INTERVIEWER:
+{current_question}
+
+CANDIDATE'S RESPONSE:
+{candidate_response}
+
+TOPICS ALREADY COVERED IN THIS INTERVIEW:
+{topics_covered}
+
+Analyze this response and return a JSON object with the following structure:
+{{
+    "answer_quality": "excellent|good|partial|poor|incorrect",
+    "confidence_level": "high|medium|low",
+    "factual_accuracy": true|false,
+    "hallucination_detected": true|false,  # ONLY TRUE if candidate makes FALSE TECHNICAL CLAIMS
+    "hallucination_details": "description if detected, null otherwise",
+    "off_topic": true|false,
+    "off_topic_details": "description if detected, null otherwise",
+    "candidate_question_detected": true|false,
+    "candidate_question": "the question if detected, null otherwise",
+    "key_observations": ["observation1", "observation2"],
+    "recommended_action": "specific instruction for Interviewer",
+    "difficulty_adjustment": "increase|decrease|maintain",
+    "topics_covered_in_this_response": ["topic1", "topic2"],
+    "correct_information": "if hallucination detected, provide the correct facts here"
+}}
+
+IMPORTANT:
+- Set hallucination_detected=true ONLY when the candidate makes provably FALSE technical claims
+- Asking questions about the job is NOT a hallucination
+- Answering the wrong question is off_topic, NOT a hallucination
+- Admitting "I don't know" is honest, NOT a hallucination
+
+Be thorough in your analysis. If the candidate mentions something technically incorrect or makes up facts (like non-existent Python versions or features), flag it as a hallucination.

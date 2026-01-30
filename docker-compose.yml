@@ -9,13 +9,6 @@ services:
     stdin_open: true
     tty: true
     environment:
-      # Uncomment and set the provider you want to use
-      # OpenAI
-      # - OPENAI_API_KEY=${OPENAI_API_KEY}
-
-      # Anthropic
-      # - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-
       # OpenRouter (recommended)
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - OPENROUTER_MODEL=${OPENROUTER_MODEL:-anthropic/claude-3.5-sonnet}
