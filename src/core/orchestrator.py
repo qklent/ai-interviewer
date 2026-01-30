@@ -24,14 +24,14 @@ class InterviewOrchestrator:
 
     def __init__(
         self,
-        llm_provider: str = "openai",
+        llm_provider: str = "openrouter",
         llm_model: Optional[str] = None,
         output_dir: str = "logs",
     ):
         """Initialize the orchestrator with agents.
 
         Args:
-            llm_provider: LLM provider to use ("openai" or "anthropic")
+            llm_provider: LLM provider to use (currently only "openrouter" is supported)
             llm_model: Optional model override
             output_dir: Directory for interview logs
         """

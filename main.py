@@ -56,13 +56,11 @@ def run_interactive_interview():
     logger.info("Starting interactive interview mode")
     print_banner()
 
-    # Check for API keys
-    if not os.getenv("OPENAI_API_KEY") and not os.getenv("ANTHROPIC_API_KEY") and not os.getenv("OPENROUTER_API_KEY"):
-        logger.error("No API key found in environment variables")
-        print("ERROR: No API key found!")
-        print("Please set one of the following environment variables:")
-        print("  - OPENAI_API_KEY")
-        print("  - ANTHROPIC_API_KEY")
+    # Check for API key
+    if not os.getenv("OPENROUTER_API_KEY"):
+        logger.error("OPENROUTER_API_KEY not found in environment variables")
+        print("ERROR: OPENROUTER_API_KEY not found!")
+        print("Please set the following environment variable:")
         print("  - OPENROUTER_API_KEY")
         print()
         print("Example:")
@@ -70,20 +68,11 @@ def run_interactive_interview():
         print("  export OPENROUTER_MODEL=anthropic/claude-3.5-sonnet")
         sys.exit(1)
 
-    # Determine which provider to use
-    if os.getenv("OPENROUTER_API_KEY"):
-        provider = "openrouter"
-        model = os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
-        logger.info(f"Using OpenRouter with model: {model}")
-        print(f"Using OPENROUTER as LLM provider with model: {model}")
-    elif os.getenv("OPENAI_API_KEY"):
-        provider = "openai"
-        logger.info("Using OpenAI provider")
-        print(f"Using OPENAI as LLM provider")
-    else:
-        provider = "anthropic"
-        logger.info("Using Anthropic provider")
-        print(f"Using ANTHROPIC as LLM provider")
+    # Use OpenRouter as the provider
+    provider = "openrouter"
+    model = os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
+    logger.info(f"Using OpenRouter with model: {model}")
+    print(f"Using OPENROUTER as LLM provider with model: {model}")
     print()
 
     # Get candidate info
@@ -202,14 +191,8 @@ def run_scripted_interview(script_file: str):
         print(f"Responses to process: {len(responses)}")
         print()
 
-        # Determine provider
-        if os.getenv("OPENROUTER_API_KEY"):
-            provider = "openrouter"
-        elif os.getenv("OPENAI_API_KEY"):
-            provider = "openai"
-        else:
-            provider = "anthropic"
-
+        # Use OpenRouter as the provider
+        provider = "openrouter"
         logger.info(f"Using provider: {provider}")
 
         # Initialize and run

@@ -195,21 +195,14 @@ def save_to_file(output_file: str, test_cases: List[Dict]):
 
 def get_llm_client_instance():
     """Get configured LLM client."""
-    if os.getenv("OPENROUTER_API_KEY"):
-        provider = "openrouter"
-        model = os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
-        return get_llm_client(provider, model=model)
-    elif os.getenv("OPENAI_API_KEY"):
-        provider = "openai"
-        return get_llm_client(provider)
-    elif os.getenv("ANTHROPIC_API_KEY"):
-        provider = "anthropic"
-        return get_llm_client(provider)
-    else:
+    if not os.getenv("OPENROUTER_API_KEY"):
         raise ValueError(
-            "No API key found! Please set one of: "
-            "OPENAI_API_KEY, ANTHROPIC_API_KEY, or OPENROUTER_API_KEY"
+            "OPENROUTER_API_KEY not found! Please set the OPENROUTER_API_KEY environment variable."
         )
+
+    provider = "openrouter"
+    model = os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
+    return get_llm_client(provider, model=model)
 
 
 def generate_interviewee_profile(llm_client) -> Dict:
