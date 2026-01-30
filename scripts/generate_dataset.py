@@ -28,8 +28,95 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from langfuse import Langfuse
+from pydantic import BaseModel, Field
 from src.core.llm_client import get_llm_client
 
+
+# ============================================================================
+# Pydantic Models for Structured Outputs
+# ============================================================================
+
+class TestCase(BaseModel):
+    """Single test case for agent evaluation."""
+    input: Dict
+    expected_output: Optional[Dict] = None
+    metadata: Optional[Dict] = Field(default_factory=dict)
+
+
+class TestCasesList(BaseModel):
+    """Wrapper for list of test cases."""
+    test_cases: List[TestCase]
+
+
+class IntervieweeProfile(BaseModel):
+    """Generated interviewee profile."""
+    name: str
+    position: str
+    grade: str  # "Junior", "Middle", "Senior"
+    experience: str
+    strengths: List[str] = Field(default_factory=list)
+    weaknesses: List[str] = Field(default_factory=list)
+    personality_traits: List[str] = Field(default_factory=list)
+
+
+class IntervieweeResponseModel(BaseModel):
+    """Wrapper for interviewee response."""
+    response: str
+
+
+class ObserverAnalysisPydantic(BaseModel):
+    """Observer analysis in Pydantic format."""
+    quality: str = Field(description="Answer quality: excellent/good/poor/off_topic")
+    confidence: str = Field(description="Confidence level: high/medium/low")
+    has_hallucination: bool = Field(description="Whether false technical claims were detected")
+    hallucination_details: Optional[str] = Field(default=None, description="Explanation if has_hallucination is true")
+    recommended_action: str = Field(description="Recommended action: continue/increase_difficulty/decrease_difficulty/correct_gently/ask_clarifying_question")
+    reasoning: str = Field(description="Explanation of the assessment")
+    covered_topics: List[str] = Field(default_factory=list, description="Technical topics discussed in this response")
+
+
+class InterviewerResponseModel(BaseModel):
+    """Wrapper for interviewer response."""
+    response: str
+
+
+class SkillAssessmentPydantic(BaseModel):
+    """Assessment of a specific skill."""
+    topic: str
+    status: str  # "confirmed" or "gap"
+    details: str
+
+
+class SoftSkillsAssessmentPydantic(BaseModel):
+    """Soft skills assessment."""
+    clarity: int = Field(ge=1, le=10)
+    clarity_notes: str
+    honesty: int = Field(ge=1, le=10)
+    honesty_notes: str
+    engagement: int = Field(ge=1, le=10)
+    engagement_notes: str
+
+
+class FinalFeedbackPydantic(BaseModel):
+    """Final feedback in Pydantic format."""
+    verdict: str = Field(description="Hiring verdict: hire/maybe/no_hire")
+    overall_grade: str = Field(description="Assessed grade level")
+    technical_skills: Dict[str, List[str]] = Field(
+        description="Technical skills with 'confirmed' and 'gaps' lists"
+    )
+    soft_skills: Dict[str, List[str]] = Field(
+        description="Soft skills with 'strengths' and 'areas_for_improvement' lists"
+    )
+    recommendation: str = Field(description="Hiring recommendation text")
+    learning_roadmap: List[str] = Field(
+        default_factory=list,
+        description="Personalized learning suggestions"
+    )
+
+
+# ============================================================================
+# Command Line Parsing
+# ============================================================================
 
 def parse_args():
     """Parse command line arguments."""
@@ -91,7 +178,7 @@ def load_generator_prompt(agent_name: str, num_cases: int) -> str:
 
 def generate_test_cases(agent_name: str, num_cases: int) -> List[Dict]:
     """
-    Generate test cases using LLM.
+    Generate test cases using LLM with structured output.
 
     Args:
         agent_name: Name of the agent
@@ -107,18 +194,16 @@ def generate_test_cases(agent_name: str, num_cases: int) -> List[Dict]:
     print("This may take a minute...\n")
 
     try:
-        # Generate cases as JSON
-        # The generator_prompt is the system prompt, we need a user prompt too
-        user_prompt = "Generate the test cases as specified in the instructions. Return them as a JSON object with a 'test_cases' key containing an array of test cases."
-        result = llm_client.generate_json(generator_prompt, user_prompt)
+        # Generate cases using structured output
+        user_prompt = "Generate the test cases as specified in the instructions."
+        result = llm_client.generate_structured(
+            system_prompt=generator_prompt,
+            user_prompt=user_prompt,
+            response_format=TestCasesList
+        )
 
-        # The result should be a list of test cases
-        if isinstance(result, list):
-            test_cases = result
-        elif isinstance(result, dict) and "test_cases" in result:
-            test_cases = result["test_cases"]
-        else:
-            raise ValueError(f"Unexpected result format: {type(result)}")
+        # Convert Pydantic models to dictionaries
+        test_cases = [tc.model_dump() for tc in result.test_cases]
 
         print(f"✓ Generated {len(test_cases)} test cases\n")
         return test_cases
@@ -206,21 +291,25 @@ def get_llm_client_instance():
 
 
 def generate_interviewee_profile(llm_client) -> Dict:
-    """Generate a single interviewee profile."""
+    """Generate a single interviewee profile using structured output."""
     prompt_path = Path(__file__).parent.parent / "prompts" / "evaluation" / "interviewee_profile_generator.txt"
 
     if not prompt_path.exists():
         raise FileNotFoundError(f"Generator prompt not found: {prompt_path}")
 
     system_prompt = prompt_path.read_text()
-    user_prompt = "Generate a single interviewee profile as specified. Return it as a JSON object."
+    user_prompt = "Generate a single interviewee profile as specified."
 
-    profile = llm_client.generate_json(system_prompt, user_prompt)
-    return profile
+    profile = llm_client.generate_structured(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        response_format=IntervieweeProfile
+    )
+    return profile.model_dump()
 
 
 def generate_interviewee_response(llm_client, profile: Dict, question: str, conversation_history: List[Dict]) -> str:
-    """Generate interviewee response based on profile and context."""
+    """Generate interviewee response based on profile and context using structured output."""
     prompt_path = Path(__file__).parent.parent / "prompts" / "evaluation" / "interviewee_response_generator.txt"
 
     if not prompt_path.exists():
@@ -235,34 +324,22 @@ Profile: {json.dumps(profile, indent=2)}
 Question: {question}
 
 Conversation history:
-{json.dumps(conversation_history, indent=2)}
+{json.dumps(conversation_history, indent=2)}"""
 
-Return the response as a JSON object with a 'response' key."""
+    result = llm_client.generate_structured(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        response_format=IntervieweeResponseModel
+    )
 
-    result = llm_client.generate_json(system_prompt, user_prompt)
-
-    if isinstance(result, dict) and "response" in result:
-        return result["response"]
-    elif isinstance(result, str):
-        return result
-    else:
-        return str(result)
+    return result.response
 
 
 def generate_observer_analysis(llm_client, question: str, response: str, profile: Dict) -> Dict:
-    """Generate observer analysis for a candidate response."""
+    """Generate observer analysis for a candidate response using structured output."""
     system_prompt = """You are an ObserverAgent that analyzes candidate responses in technical interviews.
 
-Analyze the candidate's response and provide structured feedback including:
-- quality: excellent/good/poor/off_topic
-- confidence: high/medium/low
-- has_hallucination: true/false (detects false technical claims)
-- hallucination_details: explanation if has_hallucination is true
-- recommended_action: continue/increase_difficulty/decrease_difficulty/correct_gently/ask_clarifying_question
-- reasoning: explanation of the assessment
-- covered_topics: list of technical topics discussed in this response
-
-Return analysis as a JSON object."""
+Analyze the candidate's response and provide structured feedback."""
 
     user_prompt = f"""Question: {question}
 
@@ -273,12 +350,18 @@ Context - Candidate profile:
 
 Provide your analysis:"""
 
-    return llm_client.generate_json(system_prompt, user_prompt)
+    result = llm_client.generate_structured(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        response_format=ObserverAnalysisPydantic
+    )
+
+    return result.model_dump()
 
 
 def generate_interviewer_response(llm_client, profile: Dict, conversation_history: List[Dict],
                                   observer_analysis: Dict, covered_topics: List[str]) -> str:
-    """Generate interviewer's next question or response."""
+    """Generate interviewer's next question or response using structured output."""
     system_prompt = """You are an InterviewerAgent conducting a technical interview.
 
 Based on the conversation history and the ObserverAgent's analysis, generate your next response.
@@ -288,9 +371,7 @@ This could be:
 - Adjusting difficulty based on performance
 - Moving to a new topic
 
-Avoid topics that have already been thoroughly covered.
-
-Return your response as a JSON object with a 'response' key."""
+Avoid topics that have already been thoroughly covered."""
 
     user_prompt = f"""Candidate profile:
 {json.dumps(profile, indent=2)}
@@ -305,14 +386,13 @@ Topics already covered: {', '.join(covered_topics) if covered_topics else 'None 
 
 Generate your response:"""
 
-    result = llm_client.generate_json(system_prompt, user_prompt)
+    result = llm_client.generate_structured(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        response_format=InterviewerResponseModel
+    )
 
-    if isinstance(result, dict) and "response" in result:
-        return result["response"]
-    elif isinstance(result, str):
-        return result
-    else:
-        return str(result)
+    return result.response
 
 
 def generate_full_session(llm_client, turns: int = 8) -> Dict:
@@ -373,17 +453,7 @@ def generate_full_session(llm_client, turns: int = 8) -> Dict:
 
     # Generate final feedback
     print("  Generating final feedback...")
-    system_prompt = """You are a FeedbackGeneratorAgent. Generate comprehensive final feedback for the interview.
-
-Include:
-- verdict: hire/maybe/no_hire
-- overall_grade: assessed grade level
-- technical_skills: {confirmed: [], gaps: []}
-- soft_skills: {strengths: [], areas_for_improvement: []}
-- recommendation: hiring recommendation text
-- learning_roadmap: personalized suggestions
-
-Return as a JSON object."""
+    system_prompt = """You are a FeedbackGeneratorAgent. Generate comprehensive final feedback for the interview."""
 
     user_prompt = f"""Candidate profile:
 {json.dumps(profile, indent=2)}
@@ -396,14 +466,18 @@ Observer analyses:
 
 Generate final feedback:"""
 
-    final_feedback = llm_client.generate_json(system_prompt, user_prompt)
+    final_feedback_result = llm_client.generate_structured(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        response_format=FinalFeedbackPydantic
+    )
 
     return {
         "profile": profile,
         "conversation_history": conversation_history,
         "observer_analyses": observer_analyses,
         "covered_topics": covered_topics,
-        "final_feedback": final_feedback
+        "final_feedback": final_feedback_result.model_dump()
     }
 
 
