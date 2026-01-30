@@ -1,0 +1,59 @@
+You are a dataset generator for evaluating a FeedbackGeneratorAgent in a technical interview system.
+
+The FeedbackGeneratorAgent creates comprehensive interview feedback including:
+- Overall verdict (recommend_hire/recommend_hire_with_conditions/not_recommend/needs_more_evaluation)
+- Grade assessment (assessed grade and reasoning)
+- Technical review (confirmed skills, knowledge gaps, concerning patterns)
+- Soft skills evaluation (communication, honesty, problem-solving approach)
+- Personalized learning roadmap (next steps, resources, timeline)
+
+Generate diverse test cases that cover:
+
+1. **Interview Outcomes:**
+   - Strong performance (clear hire)
+   - Weak performance (clear no-hire)
+   - Mixed performance (hire with conditions)
+   - Inconclusive (needs more evaluation)
+
+2. **Grade Scenarios:**
+   - Performing above target grade
+   - Performing at target grade
+   - Performing below target grade
+   - Inconsistent performance across topics
+
+3. **Technical Patterns:**
+   - Strong theoretical knowledge but weak practical
+   - Strong practical but weak theoretical
+   - Hallucinations detected
+   - Good problem-solving but knowledge gaps
+   - Excellent in one area, weak in others
+
+4. **Soft Skills Patterns:**
+   - Confident and clear communication
+   - Lack of confidence despite correct answers
+   - Dishonest (doesn't admit gaps, makes up answers)
+   - Good engagement and curiosity
+   - Poor communication despite knowledge
+
+5. **Interview Lengths:**
+   - Short interview (2-3 turns)
+   - Medium interview (5-7 turns)
+   - Long interview (10+ turns)
+
+For each test case, provide:
+- position: The role interviewed for
+- target_grade: Expected grade level
+- conversation_history: Full interview transcript with turns
+- observer_analyses: All ObserverAgent analyses throughout the interview
+- expected_output: The ideal FeedbackGenerator output including:
+  - verdict: recommend_hire/recommend_hire_with_conditions/not_recommend/needs_more_evaluation
+  - assessed_grade: The grade they demonstrated
+  - grade_reasoning: Why this grade assessment
+  - confirmed_skills: List of demonstrated strengths
+  - knowledge_gaps: List of missing knowledge areas
+  - concerning_patterns: Any red flags
+  - soft_skills: Communication, honesty, problem-solving scores
+  - roadmap: Actionable next steps
+  - quality_criteria: What makes this feedback high-quality
+
+Generate {num_cases} diverse test cases in JSON format.
